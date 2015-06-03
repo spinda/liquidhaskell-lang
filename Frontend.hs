@@ -118,33 +118,6 @@ extractLocal varMap (LqLocal id ty) = do
 
 --------------------------------------------------------------------------------
 
-{-
-resolveType :: [(Name, AnnType)] -> (Name, Type, AnnType) -> (Name, SpecType)
-resolveType scope (name, ghcType, annType) =
-  (name, resolveType' scope ghcType annType)
-  
-resolveType' :: [(Name, AnnType)] -> Type -> AnnType -> SpecType
-
-resolveType' scope (TyConApp tc as) (RApp _ as' r)
-  | Just (tenv, rhs, tys') <- tcExpandTyCon_maybe tc tys
-  = resolveType' (mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys') (mkRAppTys $ lookup (yConName)
-  | otherwidse
-  = RApp tc (zipWith resolveType' as as') r
-
-resolveType' _ (TyVarTy tv) (RVar _ r) = 
-  RVar tv r
-resolveType' scope (AppTy t1 t2) (RAppTy t1' t2' r) =
-  RAppTy (resolveType' scope t1 t1') (resolveType' scope t2 t2') r
-resolveType' (FunTy i o) (RFun b i' o' r) =
-  RFun b (resolveType' scope i i') (resolveType' scope o o') r
-resolveType' (ForAllTy tv ty) (RAllT _ ty') =
-  RAllT tv (resolveType' scope ty ty')
-resolveType' (LitTy _) _ =
-  error "TODO: LiquidHaskell doesn't support type-level literals, yet"
--}
-
---------------------------------------------------------------------------------
-
 annotationsOfType :: (Data a, Typeable a) => ModGuts -> [(Name, a)]
 annotationsOfType = mapMaybe annotationOfType . mg_anns
 
@@ -165,7 +138,7 @@ editQuasiQuotes =
 editSigQuote :: Sig RdrName -> Sig RdrName
 editSigQuote (TypeSig [name] (L l (HsForAllTy Implicit sp tvb ctxt (L l' (HsQuasiQuoteTy (HsQuasiQuote id pos fs))))) post) =
   TypeSig [name] (L l $ HsForAllTy Implicit sp tvb ctxt $ L l' $ HsQuasiQuoteTy $ HsQuasiQuote id pos $ appendFS (appendFS (occNameFS $ rdrNameOcc $ unLoc name) (mkFastString "|v")) fs) post
-editSig t = t
+editSigQuote t = t
 
 editSynQuote :: TyClDecl RdrName -> TyClDecl RdrName
 editSynQuote (SynDecl name tvs (L l (HsQuasiQuoteTy (HsQuasiQuote id pos fs))) fvs) =

@@ -8,7 +8,7 @@ cabal-version:       >=1.10
 executable gsoc
   main-is:             Frontend.hs
   build-depends:       base, gsoc2015, ghc, ghc-paths, syb, template-haskell,
-                       containers
+                       containers, unordered-containers, hashable, mtl
   default-language:    Haskell2010
 
 library
