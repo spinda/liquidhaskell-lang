@@ -13,7 +13,7 @@ executable gsoc
 
 library
   exposed-modules:     Quasi, Parser, RType, Split, Fixpoint, Util, Force, Syn,
-                       TyUnify
+                       TyUnify, Subst, Expand, SpecType
   build-depends:       base, ghc, ghc-paths, mtl, containers,
                        unordered-containers, utf8-string, template-haskell,
                        parsers, trifecta, pretty, GenericPretty, ansi-wl-pprint
