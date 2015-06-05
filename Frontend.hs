@@ -50,6 +50,7 @@ import qualified Data.IntMap.Strict as M
 
 import qualified Language.Haskell.TH.Syntax as TH
 
+import Expand
 import RType
 import Syn
 import TyUnify
@@ -69,9 +70,10 @@ main =
       setTargets [target]
       graph <- depanal [] True
       typeData <- concatMapM extractTypeData $ flattenSCCs $ topSortModuleGraph False graph Nothing
-      let unified = map (\(name, ty, ann) -> (name, unifyType ty ann)) typeData
+      let unified = map (\(name, ty, ann) -> (name, unifyRTy ty ann)) typeData
+      let expanded = expandRTys unified
 
-      liftIO $ mapM_ (putStrLn . skel) unified
+      liftIO $ mapM_ (putStrLn . skel) expanded
 
 --------------------------------------------------------------------------------
 
