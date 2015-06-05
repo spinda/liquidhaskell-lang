@@ -1,20 +1,20 @@
-module TyUnify (unifyType) where
+module TyUnify (unifyRTy) where
 
 import TypeRep
 
 import RType
 
-unifyType :: Type -> AnnType -> SpecType
-unifyType (TyVarTy tv) (RVar _ r) = 
+unifyRTy :: Type -> AnnType -> SpecType
+unifyRTy (TyVarTy tv) (RVar () r) =
   RVar tv r
-unifyType (AppTy t1 t2) (RAppTy t1' t2' r) =
-  RAppTy (unifyType t1 t1') (unifyType t2 t2') r
-unifyType (TyConApp tc as) (RApp _ as' r) =
-  RApp tc (zipWith unifyType as as') r
-unifyType (FunTy i o) (RFun b i' o' r) =
-  RFun b (unifyType i i') (unifyType o o') r
-unifyType (ForAllTy tv ty) (RAllT _ ty') =
-  RAllT tv (unifyType ty ty')
-unifyType (LitTy _) _ =
+unifyRTy (AppTy t1 t2) (RAppTy t1' t2' r) =
+  RAppTy (unifyRTy t1 t1') (unifyRTy t2 t2') r
+unifyRTy (TyConApp tc as) (RApp () as' r) =
+  RApp tc (zipWith unifyRTy as as') r
+unifyRTy (FunTy i o) (RFun b i' o' r) =
+  RFun b (unifyRTy i i') (unifyRTy o o') r
+unifyRTy (ForAllTy tv ty) (RAllT () ty') =
+  RAllT tv (unifyRTy ty ty')
+unifyRTy (LitTy _) _ =
   error "TODO: LiquidHaskell doesn't support type-level literals, yet"
 

@@ -38,7 +38,7 @@ ofDec (TySyn con tvs ty) = do
     , TySynD con' tvs st
     ]
   where
-    (st, at) = splitType ty
+    (st, at) = splitRTy ty
 
 ofDec (FnSig var ty) = do
   ast <- dataToExpQ (const Nothing) at
@@ -47,7 +47,7 @@ ofDec (FnSig var ty) = do
     , SigD var st
     ]
   where
-    (st, at) = splitType ty
+    (st, at) = splitRTy ty
 
 lqType :: String -> Q Type
 lqType s = do
@@ -58,14 +58,14 @@ lqType s = do
       case head $ drop 1 sig of
         'v' -> do
           let ty' = quantify tvs ty
-          let (st, at) = splitType ty'
+          let (st, at) = splitRTy ty'
           Just name <- lookupValueName id
           Just ghcName <- forceGetGhcName name
           ast <- dataToExpQ (const Nothing) $ LqLocal (getKey $ getUnique ghcName) at
           forceAddTopDecls [PragmaD $ AnnP (TypeAnnotation ''LiquidHaskell) $ SigE ast $ ConT ''LqLocal]
           return st
         't' -> do
-          let (st, at) = splitType ty
+          let (st, at) = splitRTy ty
           ast <- dataToExpQ (const Nothing) at
           Just name <- lookupTypeName id
           forceAddTopDecls [PragmaD $ AnnP (TypeAnnotation name) $ SigE ast $ ConT ''AnnType]

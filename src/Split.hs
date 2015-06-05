@@ -1,4 +1,4 @@
-module Split where
+module Split (splitRTy) where
 
 import Data.List
 
@@ -6,22 +6,25 @@ import Language.Haskell.TH.Syntax
 
 import RType
 
-splitType :: QuasiType -> (Type, AnnType)
-splitType t = (simplType t, stripType t)
+--------------------------------------------------------------------------------
 
+splitRTy :: QuasiType -> (Type, AnnType)
+splitRTy t = (simplRTy t, stripRTy t)
 
-simplType :: QuasiType -> Type
-simplType (RVar tv _)
+--------------------------------------------------------------------------------
+
+simplRTy :: QuasiType -> Type
+simplRTy (RVar tv _)
   = VarT tv
-simplType (RAppTy t1 t2 _)
-  = AppT (simplType t1) (simplType t2)
-simplType (RApp tc as _)
-  = foldl' AppT (ConT tc) (map simplType as)
-simplType (RFun _ i o _)
-  = ArrowT `AppT` simplType i `AppT` simplType o
-simplType (RAllT tv ty)
+simplRTy (RAppTy t1 t2 _)
+  = AppT (simplRTy t1) (simplRTy t2)
+simplRTy (RApp tc as _)
+  = foldl' AppT (ConT tc) (map simplRTy as)
+simplRTy (RFun _ i o _)
+  = ArrowT `AppT` simplRTy i `AppT` simplRTy o
+simplRTy (RAllT tv ty)
   = let (tvs, rest) = collectTVs [tv] ty
-    in  ForallT (map PlainTV $ reverse tvs) [] (simplType rest)
+    in  ForallT (map PlainTV $ reverse tvs) [] (simplRTy rest)
 
 collectTVs :: [Name] -> QuasiType -> ([Name], QuasiType)
 collectTVs tvs (RAllT tv rest)
@@ -29,16 +32,17 @@ collectTVs tvs (RAllT tv rest)
 collectTVs tvs rest
   = (tvs, rest)
 
+--------------------------------------------------------------------------------
 
-stripType :: QuasiType -> AnnType
-stripType (RVar _ r)
+stripRTy :: QuasiType -> AnnType
+stripRTy (RVar _ r)
   = RVar () r
-stripType (RAppTy t1 t2 r)
-  = RAppTy (stripType t1) (stripType t2) r
-stripType (RApp _ as r)
-  = RApp () (map stripType as) r
-stripType (RFun b i o r)
-  = RFun b (stripType i) (stripType o) r
-stripType (RAllT _ ty)
-  = RAllT () (stripType ty)
+stripRTy (RAppTy t1 t2 r)
+  = RAppTy (stripRTy t1) (stripRTy t2) r
+stripRTy (RApp _ as r)
+  = RApp () (map stripRTy as) r
+stripRTy (RFun b i o r)
+  = RFun b (stripRTy i) (stripRTy o) r
+stripRTy (RAllT _ ty)
+  = RAllT () (stripRTy ty)
 
