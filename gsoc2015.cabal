@@ -8,15 +8,15 @@ cabal-version:       >=1.10
 executable gsoc
   main-is:             Frontend.hs
   build-depends:       base, gsoc2015, ghc, ghc-paths, syb, template-haskell,
-                       containers, unordered-containers, hashable, mtl
+                       containers
   default-language:    Haskell2010
 
 library
   exposed-modules:     Quasi, Parser, RType, Split, Fixpoint, Util, Force, Syn,
                        TyUnify, Subst, Expand, SpecType
   build-depends:       base, ghc, ghc-paths, mtl, containers,
-                       unordered-containers, utf8-string, template-haskell,
-                       parsers, trifecta, pretty, GenericPretty, ansi-wl-pprint
+                       unordered-containers, template-haskell, parsec, pretty,
+                       GenericPretty
   hs-source-dirs:      src
   default-language:    Haskell2010
 
