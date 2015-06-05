@@ -49,6 +49,18 @@ data RType tc tv r
 
   deriving (Eq, Show, Data, Typeable, Generic)
 
+instance Functor (RType tc tv) where
+  fmap f (RVar tv r) =
+    RVar tv $ f r
+  fmap f (RAppTy t1 t2 r) =
+    RAppTy (fmap f t1) (fmap f t2) (f r)
+  fmap f (RApp tc as r) =
+    RApp tc (map (fmap f) as) (f r)
+  fmap f (RFun b i o r) =
+    RFun b (fmap f i) (fmap f o) (f r)
+  fmap f (RAllT tv ty) =
+    RAllT tv $ fmap f ty
+
 type QuasiType = RType Name  Name  RReft
 type AnnType   = RType ()    ()    RReft
 type SpecType  = RType TyCon TyVar RReft
