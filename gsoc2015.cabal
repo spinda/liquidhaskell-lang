@@ -12,7 +12,7 @@ executable gsoc
   default-language:    Haskell2010
 
 library
-  exposed-modules:     Quasi, Parser, RType, Split, Fixpoint, Util, Force, Syn,
+  exposed-modules:     Quasi, Parser, RType, Split, Fixpoint, Force, Syn,
                        TyUnify, Subst, Expand, SpecType
   build-depends:       base, ghc, ghc-paths, mtl, containers,
                        unordered-containers, template-haskell, parsec, pretty,

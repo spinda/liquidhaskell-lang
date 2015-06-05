@@ -1,45 +1,39 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TupleSections #-}
 
 module Parser (ParsedDec(..), quantify, parseDecs, parseType) where
 
--- TODO: Because Trifecta pulls in so many dependencies, the parser will most
---       likely be switched to Parsec. Fortunately, their APIs are similar
---       enough and the pareser is lean enough that this shouldn't be too much
---       of a hassle.
+-- TODO: Show code in error messages?
+-- TODO: Look up names (as opposed to mkName) to produce errors with better
+--       position information?
 
 import Prelude hiding (pred)
 
-import Control.Applicative
 import Control.Arrow
 import Control.Monad
-import Control.Monad.State
+import Control.Monad.Trans
 
 import Data.List
 import Data.Maybe
 import Data.Monoid
 import Data.String
 
-import qualified Data.HashSet         as S
-import qualified Data.ByteString.UTF8 as U
+import qualified Data.HashSet as S
 
 import Language.Haskell.TH hiding (Pred)
 import Language.Haskell.TH.Syntax hiding (Infix, Pred, lift)
 
 import System.IO
 
-import Text.Parser.Char
-import Text.Parser.Combinators
-import Text.Parser.Expression hiding (buildExpressionParser)
-import Text.Parser.Token
-import Text.Parser.Token.Highlight
-import Text.Parser.Token.Style
+import Text.Parsec hiding (parse)
+import Text.Parsec.Char
+import Text.Parsec.Combinator
+import Text.Parsec.Error
+import Text.Parsec.Expr
+import Text.Parsec.Language (emptyDef)
+import Text.Parsec.Pos
+import Text.Parsec.Token (GenLanguageDef(..))
 
-import qualified Text.PrettyPrint.ANSI.Leijen as LJ
-
-import qualified Text.Trifecta as T
-import qualified Text.Trifecta.Delta as T
+import qualified Text.Parsec.Token as T
 
 import Fixpoint hiding (pAnd)
 import RType
@@ -49,107 +43,161 @@ import Util
 -- Top-Level Entry Point -------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data ParsedDec = TySyn String [TyVarBndr] QuasiType
+data ParsedDec = TySyn Name [TyVarBndr] QuasiType
                | FnSig Name QuasiType
 
-quantify :: [Name] -> QuasiType -> QuasiType
-quantify tvs ty = foldr RAllT ty $ reverse tvs
-
-parseDecs :: String -> Either String [ParsedDec]
+parseDecs :: String -> Q [ParsedDec]
 parseDecs = parse $ many decP
 
-parseType :: String -> Either String (QuasiType, [Name])
+parseType :: String -> Q (QuasiType, [Name])
 parseType = parse typeP
 
-parse :: Parser a -> String -> Either String a
-parse p src =
+parse :: Parser a -> String -> Q a
+parse p src = do
+  loc    <- location
+  result <- go loc
   case result of
-    T.Failure xs ->
-      Left $ flip LJ.displayS "" $ LJ.renderPretty 0.8 80 $ xs <> LJ.linebreak
-    T.Success (x, _) ->
-      Right x
+    Left err ->
+      fail $ show $ startErrAt loc err
+    Right result ->
+      return result
   where
-    result =
-      T.parseString (runStateT (runParser (whiteSpace *> p <* eof)) mempty) mempty src 
+    go loc =
+      runParserT (whiteSpace *> p <* eof) (PS loc mempty) (loc_filename loc) src 
+
+startErrAt :: Loc -> ParseError -> ParseError
+startErrAt loc err = setErrorPos errPos' err
+  where
+    (startLine, startCol) = loc_start loc
+
+    errPos  = errorPos err
+    errLine = sourceLine errPos
+    errCol  = sourceColumn errPos
+
+    errPos'  = setSourceLine (setSourceColumn errPos errCol') errLine'
+    errLine' = errLine + startLine - 1
+    errCol'
+      | errLine == 1 =
+        errCol + startCol - 1
+      | otherwise =
+        errCol
 
 --------------------------------------------------------------------------------
 -- Parser Definition -----------------------------------------------------------
 --------------------------------------------------------------------------------
 
-newtype Parser a = Parser { runParser :: StateT ParserState T.Parser a }
-                   deriving ( Functor, Applicative, Alternative
-                            , Monad, MonadPlus, MonadState ParserState
-                            , Parsing, CharParsing, T.DeltaParsing, T.MarkParsing T.Delta
-                            )
+type Parser = ParsecT String ParserState Q
 
-instance T.Errable Parser where
-  raiseErr = Parser . lift . T.raiseErr
-
-instance TokenParsing Parser where
-  someSpace = buildSomeSpaceParser (skipSome space) haskellCommentStyle
-
-
-data ParserState = PS { ps_implicitTV :: S.HashSet String
+data ParserState = PS { ps_startLoc   :: Loc
+                      , ps_implicitTV :: S.HashSet String
                       }
 
-instance Monoid ParserState where
-  mempty = PS mempty
-  mappend (PS xs) (PS ys) = PS $ mappend xs ys
-  mconcat xs = PS $ mconcat (map ps_implicitTV xs)
-
 addImplicitTV :: String -> Parser ()
-addImplicitTV tv = modify (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
+addImplicitTV tv = modifyState (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
 
 --------------------------------------------------------------------------------
 -- Utility Functions -----------------------------------------------------------
 --------------------------------------------------------------------------------
 
 named :: String -> Parser a -> Parser a
-named n p = p <?> n
+named s p = p <?> s
 
-unspacedIdent :: (TokenParsing m, Monad m, IsString s) => IdentifierStyle m -> m s 
-unspacedIdent s = fmap fromString $ try $ do
-  name <- highlight (_styleHighlight s) ((:) <$> _styleStart s <*> many (_styleLetter s) <?> _styleName s)
-  when (S.member name (_styleReserved s)) $ unexpected $ "reserved " ++ _styleName s ++ " " ++ show name
-  return name
+raiseErrAt :: SourcePos -> String -> Parser a
+raiseErrAt pos err = do
+  loc <- ps_startLoc <$> getState
+  lift $ fail $ show $ startErrAt loc $ newErrorMessage (Message err) pos
 
-raiseErrAt :: (T.Errable m, T.MarkParsing d m) => d -> T.Err -> m a
-raiseErrAt m e = T.release m >> T.raiseErr e
+unspacedIdent :: GenLanguageDef String ParserState Q -> Parser String
+unspacedIdent def = try $ do
+  name <- (:) <$> T.identStart def <*> many (T.identLetter def)
+  if name `S.member` reservedSet
+     then unexpected $ "reserved word " ++ show name
+     else return name
+  where
+    reservedSet = S.fromList $ T.reservedNames def
 
 --------------------------------------------------------------------------------
 -- Language Definition ---------------------------------------------------------
 --------------------------------------------------------------------------------
 
+haskell :: T.GenTokenParser String ParserState Q
+haskell = T.makeTokenParser haskellDef
+
+haskellDef :: GenLanguageDef String ParserState Q
+haskellDef = haskell98Def
+  { identLetter   = identLetter haskell98Def <|> char '#'
+  , reservedNames = reservedNames haskell98Def ++
+      [ "foreign", "import", "export", "primitive"
+      , "_ccall_", "_casm_"
+      , "forall"
+      ]
+  }
+
+haskell98Def :: GenLanguageDef String ParserState Q
+haskell98Def = haskellStyle
+  { reservedOpNames= ["::", "..", "=", "\\", "|", "<-", "->", "@", "~", "=>"]
+  , reservedNames  = [ "let", "in", "case", "of", "if", "then", "else"
+                     , "data", "type"
+                     , "class", "default", "deriving", "do", "import"
+                     , "infix", "infixl", "infixr", "instance", "module"
+                     , "newtype", "where"
+                     , "primitive"
+                     ]
+  }
+
+haskellStyle :: GenLanguageDef String ParserState Q
+haskellStyle = emptyDef
+  { commentStart    = "{-"
+  , commentEnd      = "-}"
+  , commentLine     = "--"
+  , nestedComments  = True
+  , identStart      = letter
+  , identLetter     = alphaNum <|> oneOf "_'"
+  , opStart         = opLetter haskellStyle
+  , opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
+  , reservedOpNames = []
+  , reservedNames   = []
+  , caseSensitive   = True
+  }
+
+
 reserved, reservedOp :: String -> Parser ()
-reserved   = reserve haskellIdents
-reservedOp = reserve haskellOps
-
-
-varStyle, conStyle :: IdentifierStyle Parser
-varStyle = haskellIdents { _styleName      = "variable identifier"
-                         , _styleStart     = lower <|> char '_' 
-                         , _styleHighlight = Identifier
-                         }
-conStyle = haskellIdents { _styleName      = "constructor identifier"
-                         , _styleStart     = upper 
-                         , _styleHighlight = Constructor
-                         }
-
+reserved   = T.reserved haskell
+reservedOp = T.reservedOp haskell
 
 varid, conid :: Parser String
-varid  = ident varStyle
-conid  = ident conStyle
+varid = named "variable identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = lower <|> char '_' }
+conid = named "constructor identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = upper              }
 
 binder :: Parser String
-binder = ident $ varStyle { _styleName = "binder"
-                          , _styleReserved = S.union (S.fromList ["true", "false", "not", "mod"]) (_styleReserved varStyle)
-                          }
+binder = named "binder" $ T.identifier $ T.makeTokenParser $ haskellDef
+  { T.identStart = lower <|> char '_'
+  , T.reservedNames = T.reservedNames haskellDef ++ ["true", "false", "not", "mod"]
+  }
+
+whiteSpace :: Parser ()
+whiteSpace = T.whiteSpace haskell
+
+operator :: Parser String
+operator = T.operator haskell
+
+natural :: Parser Integer
+natural = T.natural haskell
+
+braces :: Parser a -> Parser a
+braces = T.braces haskell
+
+parens :: Parser a -> Parser a
+parens = T.parens haskell
+
+colon :: Parser String
+colon = T.colon haskell
 
 --------------------------------------------------------------------------------
 -- Constructors and Vars -------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data TyConOp = TyConOp T.Delta Name deriving (Show)
+data TyConOp = TyConOp SourcePos Name deriving (Show)
 
 tyCon :: Parser (Either TyConOp Name)
 tyCon = tyCon' "" <?> "type constructor"
@@ -159,13 +207,13 @@ tyCon' prefix = (Left <$> tyConOp prefix) <|> tyConId prefix
 
 tyConOp :: String -> Parser TyConOp
 tyConOp prefix = do
-  m  <- T.mark
-  op <- ident haskellOps <?> "type constructor operator"
-  return $ TyConOp m $ mkName $ prefix ++ op
+  p  <- getPosition
+  op <- operator
+  return $ TyConOp p $ mkName $ prefix ++ op
 
 tyConId :: String -> Parser (Either TyConOp Name)
 tyConId prefix = do
-  ident <- unspacedIdent $ conStyle { _styleName = "type constructor ident or module name" }
+  ident <- unspacedIdent $ haskellDef { T.identStart = upper }
   (char '.' *> tyCon' (prefix ++ ident ++ ".")) <|> (Right (mkName $ prefix ++ ident) <$ whiteSpace)
 
 
@@ -181,7 +229,7 @@ decP = tySyn <|> fnSig
 
 tySyn :: Parser ParsedDec
 tySyn = named "type synonym" $ do
-  con     <- reserved "type" *> conid
+  con     <- (lift . newName) =<< reserved "type" *> conid
   tvs     <- map (PlainTV . mkName) <$> many tyVar
   (ty, _) <- reservedOp "=" *> typeP
   return $ TySyn con tvs ty
@@ -196,24 +244,29 @@ fnSig = named "signature" $ do
 -- LiquidHaskell Types ---------------------------------------------------------
 --------------------------------------------------------------------------------
 
+-- TODO: Move
+quantify :: [Name] -> QuasiType -> QuasiType
+quantify tvs ty = foldr RAllT ty $ reverse tvs
+
+
 typeP :: Parser (QuasiType, [Name])
 typeP = do
-  ty     <- typeP' False
-  PS tvs <- get
-  put mempty
-  return (ty, map mkName $ S.toList tvs)
+  ty <- typeP' False
+  ps <- getState
+  putState $ ps { ps_implicitTV = mempty }
+  return (ty, map mkName $ S.toList $ ps_implicitTV ps)
 
 typeP' :: Bool -> Parser QuasiType
 typeP' inParens = do
-  bm <- T.mark
-  b  <- optional $ try (binder <* colon)
+  bp <- getPosition
+  b  <- optionMaybe $ try (binder <* colon)
   t1 <- arg
-  t2 <- optional $ reservedOp "->" *> typeP' False
+  t2 <- optionMaybe $ reservedOp "->" *> typeP' False
   case (t1, t2) of
     (_, Nothing) | isJust b ->
-      raiseErrAt bm errBinderReturn
-    (Left (TyConOp tm _), _) | not inParens || isJust t2 ->
-      raiseErrAt tm errTyConOp
+      raiseErrAt bp errBinderReturn
+    (Left (TyConOp tp _), _) | not inParens || isJust t2 ->
+      raiseErrAt tp errTyConOp
     (Left (TyConOp _ n), Nothing) ->
       return $ RApp n [] mempty
     (Right i, Just o) ->
@@ -224,19 +277,19 @@ typeP' inParens = do
 
 arg :: Parser (Either TyConOp QuasiType)
 arg = do
-  args <- some arg'
+  args <- many1 arg'
   case args of
     [t] -> return t
-    (Left (TyConOp m _) : _) ->
-      raiseErrAt m errTyConOp
+    (Left (TyConOp p _) : _) ->
+      raiseErrAt p errTyConOp
     (Right (RApp n as r) : re) -> do
       re' <- mapM go re
       return $ Right $ RApp n (as ++ re') mempty
     (Right ar : re ) ->
       fmap Right $ foldl' (\t1 t2 -> RAppTy t1 t2 mempty) ar <$> mapM go re
   where
-    go (Left (TyConOp m _)) =
-      raiseErrAt m errTyConOp
+    go (Left (TyConOp p _)) =
+      raiseErrAt p errTyConOp
     go (Right ar) =
       return ar
 
@@ -253,8 +306,8 @@ refined = braces $ do
   r <- reservedOp "|" *> reft b
   go r t
   where
-    go _ (Left (TyConOp tm _)) =
-      raiseErrAt tm errTyConOp
+    go _ (Left (TyConOp tp _)) =
+      raiseErrAt tp errTyConOp
     go r (Right (RVar tv r')) =
       return $ RVar tv (mappend r r')
     go r (Right (RAppTy t1 t2 r')) =
@@ -276,12 +329,12 @@ tyConArg :: Parser (Either TyConOp QuasiType)
 tyConArg = fmap (\n -> RApp n [] mempty) <$> tyCon
 
 
-errBinderReturn :: T.Err
-errBinderReturn = T.failed
+errBinderReturn :: String
+errBinderReturn =
   "Binders outside of {braces} cannot appear in a function's return type"
 
-errTyConOp :: T.Err
-errTyConOp = T.failed
+errTyConOp :: String
+errTyConOp =
   "Type constructor operators must be surrounded in (parentheses)"
 
 --------------------------------------------------------------------------------
@@ -315,7 +368,7 @@ expOrAtom = do
     e2 <- expr
     return $ PAtom op e1 e2
 
-pops :: OperatorTable Parser Pred
+pops :: OperatorTable String ParserState Q Pred
 pops = [ [Prefix (PNot <$ reservedOp "~"  )           ]
        , [Prefix (PNot <$ reserved   "not")           ]
        , [Infix  (pAnd <$ reservedOp "&&" ) AssocRight]
@@ -367,7 +420,7 @@ ite = EIte <$> (reservedOp "if"   *> pred)
            <*> (reservedOp "then" *> expr)
            <*> (reservedOp "else" *> expr)
 
-eops :: OperatorTable Parser Expr
+eops :: OperatorTable String ParserState Q Expr
 eops = [ [ Prefix (ENeg <$ reservedOp "-")
          ]
        , [ Infix (EBin Times <$ reservedOp "*"  ) AssocLeft
