@@ -4,6 +4,11 @@
 
 module Parser (ParsedDec(..), quantify, parseDecs, parseType) where
 
+-- TODO: Because Trifecta pulls in so many dependencies, the parser will most
+--       likely be switched to Parsec. Fortunately, their APIs are similar
+--       enough and the pareser is lean enough that this shouldn't be too much
+--       of a hassle.
+
 import Prelude hiding (pred)
 
 import Control.Applicative

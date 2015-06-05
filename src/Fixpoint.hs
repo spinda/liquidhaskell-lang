@@ -7,6 +7,9 @@
 
 module Fixpoint where
 
+-- TODO: Messy, temporary copy of parts of the Fixpoint types with String,
+--       until Symbol/InternedText refreshing is implemented
+
 import Control.Arrow (first)
 
 import Data.Data hiding (TyCon)
