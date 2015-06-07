@@ -2,7 +2,7 @@
 
 module Test () where
 
-import Quasi
+import LiquidHaskell
 
 type Nat = [lq| { v:Int | 0 <= v } |]
 type Wow a = [lq| { v:a | 0 != v } |]

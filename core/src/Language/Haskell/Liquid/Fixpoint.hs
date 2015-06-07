@@ -1,31 +1,31 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 
-module Fixpoint where
+module Language.Haskell.Liquid.Fixpoint where
 
 -- TODO: Messy, temporary copy of parts of the Fixpoint types with String,
 --       until Symbol/InternedText refreshing is implemented
 
-import Control.Arrow (first)
+import           Control.Arrow              (first)
 
-import Data.Data hiding (TyCon)
-import Data.List
-import Data.Maybe
-import Data.String
-import Data.Typeable hiding (TyCon)
+import           Data.Data                  hiding (TyCon)
+import           Data.List
+import           Data.Maybe
+import           Data.String
+import           Data.Typeable              hiding (TyCon)
 
-import qualified Data.HashMap.Strict as M
+import qualified Data.HashMap.Strict        as M
 
-import GHC.Generics
+import           GHC.Generics
 
 import qualified Language.Haskell.TH.Syntax as TH
 
-import Text.PrettyPrint.HughesPJ hiding (first)
-import Text.Printf
+import           Text.PrettyPrint.HughesPJ  hiding (first)
+import           Text.Printf
 
 data Located a = Loc { loc  :: !TH.Loc -- ^ Start Position
                      , locE :: !TH.Loc -- ^ End Position

@@ -1,24 +1,26 @@
-module Subst (
+module Language.Haskell.Liquid.Subst (
     substRTy
 
   , RTySubst
   , mkRTySubst
   ) where
 
-import GHC (TyVar)
+import           GHC                              (TyVar)
 
-import TcType
-import Var
-import VarEnv
-import VarSet
+import           TcType
+import           Var
+import           VarEnv
+import           VarSet
 
-import Control.Arrow
-import Data.List
-import Data.Monoid
+import           Control.Arrow
+import           Data.List
+import           Data.Monoid
 
-import RType
-import SpecType
+import           Language.Haskell.Liquid.RType
+import           Language.Haskell.Liquid.SpecType
 
+--------------------------------------------------------------------------------
+-- Type Substitution Function --------------------------------------------------
 --------------------------------------------------------------------------------
 
 substRTy :: RTySubst -> SpecType -> SpecType
@@ -26,10 +28,11 @@ substRTy ss ty
   | nullRTySubst ss = ty
   | otherwise       = substRTy' ss ty
 
+
 substRTy' :: RTySubst -> SpecType -> SpecType
 
 substRTy' ss (RVar tv r)
-  | Just ty <- lookupRTySubst ss tv = fmap (flip mappend r) ty
+  | Just ty <- lookupRTySubst ss tv = strengthenRTy r ty
   | otherwise                       = RVar tv r
 
 substRTy' ss (RAppTy t1 t2 r) =
@@ -47,6 +50,8 @@ substRTy' ss (RAllT tv ty) =
     (ss', tv') = forAllRTySubst ss tv
 
 --------------------------------------------------------------------------------
+-- RTySubst Type and Operations ------------------------------------------------
+--------------------------------------------------------------------------------
 
 data RTySubst =
   RTS
@@ -54,25 +59,15 @@ data RTySubst =
     , rts_env :: TyVarEnv SpecType
     }
 
-instance Monoid RTySubst where
-  mempty =
-    RTS emptyTvSubst mempty
-  mappend (RTS sub1 env1) (RTS sub2 env2) =
-    RTS (unionTvSubst sub1 sub2) (mappend env1 env2)
-
-  mconcat [] =
-    mempty
-  mconcat ss =
-    RTS (foldl1' unionTvSubst $ map rts_sub ss)
-        (mconcat $ map rts_env ss)
 
 mkRTySubst :: [(TyVar, SpecType)] -> RTySubst
 mkRTySubst tvtys =
-  RTS (mkTopTvSubst $ map (second lowerRTy) tvtys)
+  RTS (mkTopTvSubst $ map (second toTypeRTy) tvtys)
       (mkVarEnv tvtys)
 
 lookupRTySubst :: RTySubst -> TyVar -> Maybe SpecType
 lookupRTySubst ss = lookupVarEnv (rts_env ss)
+
 
 nullRTySubst :: RTySubst -> Bool
 nullRTySubst = isEmptyVarEnv . rts_env

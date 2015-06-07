@@ -1,43 +1,44 @@
 {-# LANGUAGE TupleSections #-}
 
-module Parser (ParsedDec(..), quantify, parseDecs, parseType) where
+module Language.Haskell.Liquid.Parser (
+    ParsedDec(..)
+  , parseDecs
+  , parseType
+  ) where
 
 -- TODO: Show code in error messages?
--- TODO: Look up names (as opposed to mkName) to produce errors with better
---       position information?
 
-import Prelude hiding (pred)
+import           Prelude                          hiding (pred)
 
-import Control.Arrow
-import Control.Monad
-import Control.Monad.Trans
+import           Control.Arrow
+import           Control.Monad
+import           Control.Monad.Trans
 
-import Data.List
-import Data.Maybe
-import Data.Monoid
-import Data.String
+import           Data.List
+import           Data.Maybe
+import           Data.Monoid
+import           Data.String
 
-import qualified Data.HashSet as S
+import qualified Data.HashSet                     as S
 
-import Language.Haskell.TH hiding (Pred)
-import Language.Haskell.TH.Syntax hiding (Infix, Pred, lift)
+import           Language.Haskell.TH              hiding (Pred)
+import           Language.Haskell.TH.Syntax       hiding (Infix, Pred, lift)
 
-import System.IO
+import           System.IO
 
-import Text.Parsec hiding (parse)
-import Text.Parsec.Char
-import Text.Parsec.Combinator
-import Text.Parsec.Error
-import Text.Parsec.Expr
-import Text.Parsec.Language (emptyDef)
-import Text.Parsec.Pos
-import Text.Parsec.Token (GenLanguageDef(..))
+import           Text.Parsec                      hiding (parse)
+import           Text.Parsec.Char
+import           Text.Parsec.Combinator
+import           Text.Parsec.Error
+import           Text.Parsec.Expr
+import           Text.Parsec.Language             (emptyDef)
+import           Text.Parsec.Pos
+import           Text.Parsec.Token                (GenLanguageDef (..))
 
-import qualified Text.Parsec.Token as T
+import qualified Text.Parsec.Token                as T
 
-import Fixpoint hiding (pAnd)
-import RType
-import Util
+import           Language.Haskell.Liquid.Fixpoint hiding (pAnd)
+import           Language.Haskell.Liquid.RType
 
 --------------------------------------------------------------------------------
 -- Top-Level Entry Point -------------------------------------------------------
@@ -52,6 +53,12 @@ parseDecs = parse $ many decP
 parseType :: String -> Q (QuasiType, [Name])
 parseType = parse typeP
 
+--------------------------------------------------------------------------------
+-- Parser Definition -----------------------------------------------------------
+--------------------------------------------------------------------------------
+
+type Parser = ParsecT String ParserState Q
+
 parse :: Parser a -> String -> Q a
 parse p src = do
   loc    <- location
@@ -63,7 +70,21 @@ parse p src = do
       return result
   where
     go loc =
-      runParserT (whiteSpace *> p <* eof) (PS loc mempty) (loc_filename loc) src 
+      runParserT (whiteSpace *> p <* eof) (PS loc mempty) (loc_filename loc) src
+
+data ParserState = PS { ps_startLoc   :: Loc
+                      , ps_implicitTV :: S.HashSet String
+                      }
+
+addImplicitTV :: String -> Parser ()
+addImplicitTV tv = modifyState (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
+
+--------------------------------------------------------------------------------
+-- Utility Functions -----------------------------------------------------------
+--------------------------------------------------------------------------------
+
+named :: String -> Parser a -> Parser a
+named s p = p <?> s
 
 startErrAt :: Loc -> ParseError -> ParseError
 startErrAt loc err = setErrorPos errPos' err
@@ -81,26 +102,6 @@ startErrAt loc err = setErrorPos errPos' err
         errCol + startCol - 1
       | otherwise =
         errCol
-
---------------------------------------------------------------------------------
--- Parser Definition -----------------------------------------------------------
---------------------------------------------------------------------------------
-
-type Parser = ParsecT String ParserState Q
-
-data ParserState = PS { ps_startLoc   :: Loc
-                      , ps_implicitTV :: S.HashSet String
-                      }
-
-addImplicitTV :: String -> Parser ()
-addImplicitTV tv = modifyState (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
-
---------------------------------------------------------------------------------
--- Utility Functions -----------------------------------------------------------
---------------------------------------------------------------------------------
-
-named :: String -> Parser a -> Parser a
-named s p = p <?> s
 
 raiseErrAt :: SourcePos -> String -> Parser a
 raiseErrAt pos err = do
@@ -238,15 +239,13 @@ fnSig :: Parser ParsedDec
 fnSig = named "signature" $ do
   var       <- mkName <$> varid
   (ty, tvs) <- reservedOp "::" *> typeP
-  return $ FnSig var $ quantify tvs ty
+  return $ FnSig var $ quantifyRTy tvs ty
 
 --------------------------------------------------------------------------------
 -- LiquidHaskell Types ---------------------------------------------------------
 --------------------------------------------------------------------------------
 
 -- TODO: Move
-quantify :: [Name] -> QuasiType -> QuasiType
-quantify tvs ty = foldr RAllT ty $ reverse tvs
 
 
 typeP :: Parser (QuasiType, [Name])

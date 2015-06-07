@@ -1,20 +1,16 @@
-{-# LANGUAGE TemplateHaskell #-}
+module LiquidHaskell (
+    lq
+  ) where
 
-module Quasi (lq) where
+import           Control.Monad
+import           Data.Maybe
 
-import Name
-import Unique
+import           Language.Haskell.TH
+import           Language.Haskell.TH.Quote
+import           Language.Haskell.TH.Syntax
 
-import Data.List
-
-import Language.Haskell.TH
-import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.Quote
-
-import RType
-import Runtime
-import Split
-import Parser
+import           Language.Haskell.Liquid.Parser
+import           Language.Haskell.Liquid.RType
 
 --------------------------------------------------------------------------------
 -- Top-Level QuasiQuoter Entry Point -------------------------------------------
@@ -39,18 +35,8 @@ lqDec :: String -> Q [Dec]
 lqDec s = concat <$> (mapM ofDec =<< parseDecs s)
 
 ofDec :: ParsedDec -> Q [Dec]
-
-ofDec (TySyn con tvs ty) = do
-  addLqAnnotation (TypeAnnotation con) at
-  return [TySynD con tvs st]
-  where
-    (st, at) = splitRTy ty
-
-ofDec (FnSig var ty) = do
-  addLqAnnotation (ValueAnnotation var) at
-  return [SigD var st]
-  where
-    (st, at) = splitRTy ty
+ofDec (TySyn con tvs ty) = return [TySynD con tvs $ simplRTy ty]
+ofDec (FnSig var     ty) = return [SigD   var     $ simplRTy ty]
 
 --------------------------------------------------------------------------------
 -- Specialized Type Context Handling -------------------------------------------
@@ -58,20 +44,7 @@ ofDec (FnSig var ty) = do
 
 lqType :: String -> Q Type
 lqType s = do
-  (ty, tvs) <- parseType $ drop 2 sig
-  case head $ drop 1 sig of
-    'v' -> do
-      let ty' = quantify tvs ty
-      let (st, at) = splitRTy ty'
-      Just name <- lookupValueName id
-      addLqAnnotation (ValueAnnotation name) at
-      return st
-    't' -> do
-      let (st, at) = splitRTy ty
-      Just name <- lookupTypeName id
-      addLqAnnotation (TypeAnnotation name) at
-      return st
-  where
-    (id, sig) = break (== '|') s
-
+  (ty, tvs) <- parseType s
+  newTVs    <- filterM (fmap isNothing . lookupTypeName . nameBase) tvs
+  return $ simplRTy $ quantifyRTy newTVs ty
 
