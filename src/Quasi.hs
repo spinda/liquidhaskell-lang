@@ -2,6 +2,7 @@
 
 module Quasi (lq) where
 
+import Name
 import Unique
 
 import Data.List
@@ -10,11 +11,14 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 
-import Force
-import Split
-import Syn
-import Parser
 import RType
+import Runtime
+import Split
+import Parser
+
+--------------------------------------------------------------------------------
+-- Top-Level QuasiQuoter Entry Point -------------------------------------------
+--------------------------------------------------------------------------------
 
 lq :: QuasiQuoter
 lq = QuasiQuoter { quoteType = lqType
@@ -23,28 +27,34 @@ lq = QuasiQuoter { quoteType = lqType
                  , quotePat  = lqInvalid "pattern"
                  }
 
+lqInvalid :: String -> String -> Q a
+lqInvalid ctxt _ = fail $
+  "`lq` quasiquoter cannot be used in the " ++ ctxt ++ " context"
+
+--------------------------------------------------------------------------------
+-- Specialized Declaration Context Handling ------------------------------------
+--------------------------------------------------------------------------------
+
 lqDec :: String -> Q [Dec]
 lqDec s = concat <$> (mapM ofDec =<< parseDecs s)
 
 ofDec :: ParsedDec -> Q [Dec]
 
 ofDec (TySyn con tvs ty) = do
-  ast <- dataToExpQ (const Nothing) at
-  return
-    [ PragmaD $ AnnP (TypeAnnotation con) $ SigE ast $ ConT ''AnnType
-    , TySynD con tvs st
-    ]
+  addLqAnnotation (TypeAnnotation con) at
+  return [TySynD con tvs st]
   where
     (st, at) = splitRTy ty
 
 ofDec (FnSig var ty) = do
-  ast <- dataToExpQ (const Nothing) at
-  return
-    [ PragmaD $ AnnP (ValueAnnotation var) $ SigE ast $ ConT ''AnnType
-    , SigD var st
-    ]
+  addLqAnnotation (ValueAnnotation var) at
+  return [SigD var st]
   where
     (st, at) = splitRTy ty
+
+--------------------------------------------------------------------------------
+-- Specialized Type Context Handling -------------------------------------------
+--------------------------------------------------------------------------------
 
 lqType :: String -> Q Type
 lqType s = do
@@ -54,20 +64,14 @@ lqType s = do
       let ty' = quantify tvs ty
       let (st, at) = splitRTy ty'
       Just name <- lookupValueName id
-      Just ghcName <- forceGetGhcName name
-      ast <- dataToExpQ (const Nothing) $ LqLocal (getKey $ getUnique ghcName) at
-      forceAddTopDecls [PragmaD $ AnnP (TypeAnnotation ''LiquidHaskell) $ SigE ast $ ConT ''LqLocal]
+      addLqAnnotation (ValueAnnotation name) at
       return st
     't' -> do
       let (st, at) = splitRTy ty
-      ast <- dataToExpQ (const Nothing) at
       Just name <- lookupTypeName id
-      forceAddTopDecls [PragmaD $ AnnP (TypeAnnotation name) $ SigE ast $ ConT ''AnnType]
+      addLqAnnotation (TypeAnnotation name) at
       return st
   where
     (id, sig) = break (== '|') s
 
-lqInvalid :: String -> String -> Q a
-lqInvalid ctxt _ = fail $
-  "`lq` quasiquoter cannot be used in the " ++ ctxt ++ " context"
 

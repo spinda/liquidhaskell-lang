@@ -52,7 +52,7 @@ import qualified Language.Haskell.TH.Syntax as TH
 
 import Expand
 import RType
-import Syn
+import Runtime
 import TyUnify
 
 --------------------------------------------------------------------------------
