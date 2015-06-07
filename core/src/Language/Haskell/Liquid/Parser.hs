@@ -412,7 +412,7 @@ eterm = parens expr
     <|> (EBot <$ reservedOp "_|_")
     <|> ite
     <|> (ECon . I <$> natural)
-    <|> (EVar <$> binder)
+    <|> (EVar <$> (binder <|> conid))
 
 ite :: Parser Expr
 ite = EIte <$> (reservedOp "if"   *> pred)

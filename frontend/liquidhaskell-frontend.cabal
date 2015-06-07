@@ -16,7 +16,8 @@ executable liquidhaskell
                        liquidhaskell-frontend,
                        liquidhaskell-ghc,
                        pretty,
-                       syb
+                       syb,
+                       template-haskell
   default-language:    Haskell2010
 
 library

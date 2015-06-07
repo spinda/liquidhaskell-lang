@@ -8,13 +8,16 @@ cabal-version:         >=1.10
 library
   exposed-modules:     Language.Haskell.Liquid.Expand,
                        Language.Haskell.Liquid.SpecType,
+                       Language.Haskell.Liquid.Resolve,
                        Language.Haskell.Liquid.Subst
   build-depends:       base,
                        GenericPretty,
                        ghc,
                        liquidhaskell-core,
                        mtl,
-                       pretty
+                       pretty,
+                       template-haskell,
+                       unordered-containers
   hs-source-dirs:      src
   default-language:    Haskell2010
 

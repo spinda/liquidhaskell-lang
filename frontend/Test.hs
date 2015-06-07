@@ -5,7 +5,7 @@ module Test () where
 import LiquidHaskell
 
 type Nat = [lq| { v:Int | 0 <= v } |]
-type Wow a = [lq| { v:a | 0 != v } |]
+type Wow a = [lq| { v:a | 0 == X } |]
 
 [lq| id' :: a -> a |]
 id' x = x

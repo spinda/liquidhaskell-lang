@@ -39,6 +39,7 @@ import           HsBinds
 import           HsDecls
 import           HsTypes
 
+import           Control.Arrow
 import           Control.Monad
 
 import           Data.Data
@@ -57,7 +58,10 @@ import           System.Environment
 import           Text.PrettyPrint.GenericPretty
 import           Text.PrettyPrint.HughesPJ
 
+import qualified Language.Haskell.TH.Syntax             as TH
+
 import           Language.Haskell.Liquid.Expand
+import           Language.Haskell.Liquid.Resolve
 import           Language.Haskell.Liquid.RType
 import           Language.Haskell.Liquid.SpecType
 
@@ -90,9 +94,19 @@ main =
       typeData   <- concatMapM extractTypeData $ flattenSCCs $ topSortModuleGraph False graph Nothing
 
       let instantiated = map (\(name, ty, ann) -> (name, instantiateRTy ty ann)) typeData
-      let expanded     = expandRTys instantiated
+      resolved        <- mapM (\(name, ty) -> (name, ) <$> resolveRTy ["X"] (srcSpanToLoc $ nameSrcSpan name) ty) instantiated
+      let expanded     = expandRTys resolved
 
       liftIO $ mapM_ (putStrLn . render . doc) expanded
+
+srcSpanToLoc :: SrcSpan -> TH.Loc
+srcSpanToLoc (RealSrcSpan s) = TH.Loc
+  { TH.loc_filename = unpackFS $ srcSpanFile s
+  , TH.loc_package  = "TODO"
+  , TH.loc_module   = "TODO"
+  , TH.loc_start    = (srcSpanStartLine s, srcSpanStartCol s)
+  , TH.loc_end      = (srcSpanEndLine   s, srcSpanEndCol   s)
+  }
 
 --------------------------------------------------------------------------------
 -- Type Data Extraction --------------------------------------------------------

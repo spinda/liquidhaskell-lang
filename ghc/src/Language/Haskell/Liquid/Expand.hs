@@ -28,7 +28,7 @@ expandRTys ts = evalState (mapM (expandRTy.fst) ts) initState
     initState = mkNameEnv $ map (second Unexpanded) ts
 
 
-type Expand = State (NameEnv ExpType)
+type ExpandM = State (NameEnv ExpType)
 
 data ExpType = Expanded   { et_type :: SpecType }
              | Unexpanded { et_type :: SpecType }
@@ -37,7 +37,7 @@ data ExpType = Expanded   { et_type :: SpecType }
 -- Internal Expansion Functions ------------------------------------------------
 --------------------------------------------------------------------------------
 
-expandRTy :: Name -> Expand (Name, SpecType)
+expandRTy :: Name -> ExpandM (Name, SpecType)
 expandRTy name = do
   env <- get
   case lookupNameEnv env name of
@@ -46,7 +46,7 @@ expandRTy name = do
     Just (Unexpanded ty) ->
       (name, ) <$> expandRTy' name ty
 
-expandRTy' :: Name -> SpecType -> Expand SpecType
+expandRTy' :: Name -> SpecType -> ExpandM SpecType
 expandRTy' name ty = do
   ty' <- go ty
   modify $ \env -> extendNameEnv env name $ Expanded ty'
@@ -69,7 +69,7 @@ expandRTy' name ty = do
     go (RAllT tv ty) =
       RAllT tv <$> go ty
 
-expandTySyn :: Name -> Type -> Expand SpecType
+expandTySyn :: Name -> Type -> ExpandM SpecType
 expandTySyn name rhs = do
   env <- get
   case lookupNameEnv env name of

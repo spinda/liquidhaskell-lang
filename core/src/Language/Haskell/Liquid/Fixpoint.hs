@@ -27,8 +27,7 @@ import qualified Language.Haskell.TH.Syntax as TH
 import           Text.PrettyPrint.HughesPJ  hiding (first)
 import           Text.Printf
 
-data Located a = Loc { loc  :: !TH.Loc -- ^ Start Position
-                     , locE :: !TH.Loc -- ^ End Position
+data Located a = Loc { loc  :: !TH.Loc
                      , val  :: a
                      } deriving (Data, Typeable, Generic)
 
@@ -390,19 +389,19 @@ instance Show KVar where
   show (KV x) = "$" ++ show x
 
 instance Show a => Show (Located a) where
-  show (Loc l l' x) = show x ++ " defined from: " ++ show l ++ " to: " ++ show l'
+  show (Loc l x) = show x ++ " defined at: " ++ show l
 
 instance Eq a => Eq (Located a) where
-  (Loc _ _ x) == (Loc _ _ y) = x == y
+  (Loc _ x) == (Loc _ y) = x == y
 
 instance Ord a => Ord (Located a) where
   compare x y = compare (val x) (val y)
 
 instance Subable a => Subable (Located a) where
-  syms (Loc _ _ x)   = syms x
-  substa f (Loc l l' x) = Loc l l' (substa f x)
-  substf f (Loc l l' x) = Loc l l' (substf f x)
-  subst su (Loc l l' x) = Loc l l' (subst su x)
+  syms (Loc _ x)   = syms x
+  substa f (Loc l  x) = Loc l (substa f x)
+  substf f (Loc l  x) = Loc l (substf f x)
+  subst su (Loc l  x) = Loc l (subst su x)
 
 instance Show Reft where
   show (Reft (x, r)) = render $ toFix (Shim x, r)
@@ -435,8 +434,8 @@ toFixSort (FApp c ts)     = toFix c <+> hcat (intersperse space (fp <$> ts))
       fp s                = toFixSort s
 
 isListTC, isFAppTyTC :: FTycon -> Bool
-isListTC (TC (Loc _ _ c)) = c == listConName
-isTupTC  (TC (Loc _ _ c)) = c == tupConName
+isListTC (TC (Loc _ c)) = c == listConName
+isTupTC  (TC (Loc _ c)) = c == tupConName
 isFAppTyTC = (== appFTyCon)
 
 intFTyCon, boolFTyCon, realFTyCon, strFTyCon, propFTyCon, appFTyCon, listFTyCon :: FTycon
@@ -471,7 +470,7 @@ bvOrName     = "bvor"   :: String
 bvAndName    = "bvAnd"  :: String
 
 dummyLoc :: a -> Located a
-dummyLoc = Loc l l where l = dummyPos "Fixpoint.Types.dummyLoc"
+dummyLoc = Loc l where l = dummyPos "Fixpoint.Types.dummyLoc"
 
 dummyPos   :: String -> TH.Loc
 dummyPos s = TH.Loc s s s (0, 0) (0, 0)
@@ -480,8 +479,8 @@ instance Fixpoint Expr where
   toFix (ESym c)       = toFix $ Shim $ encodeSymConst c
   toFix (ECon c)       = toFix c
   toFix (EVar s)       = toFix $ Shim s
-  toFix (ELit (Loc l e s) _)     = toFix $ Loc l e $ Shim s
-  toFix (EApp (Loc l e s) es)    = toFix (Loc l e (Shim s)) <> parens (toFix es)
+  toFix (ELit (Loc l s) _)     = toFix $ Loc l $ Shim s
+  toFix (EApp (Loc l s) es)    = toFix (Loc l (Shim s)) <> parens (toFix es)
   toFix (ENeg e)       = parens $ text "-" <+> parens (toFix e)
   toFix (EBin o e1 e2) = parens $ toFix e1 <+> toFix o <+> toFix e2
   toFix (EIte p e1 e2) = parens $ toFix p <+> text "?" <+> toFix e1 <+> text ":" <+> toFix e2
@@ -527,7 +526,7 @@ instance Fixpoint Int where
   toFix = tshow
 
 instance Fixpoint FTycon where
-  toFix (TC (Loc l e s))       = toFix (Loc l e (Shim s))
+  toFix (TC (Loc l s))       = toFix (Loc l (Shim s))
 
 instance Fixpoint Integer where
   toFix = integer
@@ -562,4 +561,32 @@ flattenRefas         = concatMap flatRa
     flatRa (Refa p)  = Refa <$> flatP p
     flatP  (PAnd ps) = concatMap flatP ps
     flatP  p         = [p]
+
+prims :: [String]
+prims = [ propConName
+        , hpropConName
+        , vvName
+        , "Pred"
+        , "List"
+        , "Set_Set"
+        , "Set_sng"
+        , "Set_cup"
+        , "Set_cap"
+        , "Set_dif"
+        , "Set_emp"
+        , "Set_empty"
+        , "Set_mem"
+        , "Set_sub"
+        , "Map_t"
+        , "Map_select"
+        , "Map_store"
+        , size32Name
+        , size64Name
+        , bitVecName
+        , bvOrName
+        , bvAndName
+        , "FAppTy"
+        , nilName
+        , consName
+        ]
 
