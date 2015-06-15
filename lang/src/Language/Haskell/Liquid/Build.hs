@@ -163,7 +163,7 @@ eBdr :: String -> Expr
 eBdr = Expr . (PromotedT 'EBdr `AppT`) . toSymbol
 
 eCtr :: Located String -> Expr
-eCtr = Expr . (PromotedT 'ECtr `AppT`) . located . fmap (PromotedT . mkName)
+eCtr = Expr . (PromotedT 'ECtr `AppT`) . located . fmap (ConT . mkName)
 
 eNeg :: Expr -> Expr
 eNeg (Expr e) = Expr $ PromotedT 'ENeg `AppT` e
