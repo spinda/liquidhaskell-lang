@@ -6,9 +6,11 @@ build-type:            Simple
 cabal-version:         >=1.10
 
 library
-  exposed-modules:     LiquidHaskell
+  exposed-modules:     LiquidHaskell,
+                       LiquidHaskell_
   other-modules:       Language.Haskell.Liquid.Build,
                        Language.Haskell.Liquid.Parse,
+                       Language.Haskell.Liquid.Quasi,
                        Language.Haskell.Liquid.RType,
                        Language.Haskell.Liquid.Util
   build-depends:       base, 

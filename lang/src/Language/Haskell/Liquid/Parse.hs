@@ -45,11 +45,11 @@ import           Language.Haskell.Liquid.Util
 -- Top-Level Entry Points ------------------------------------------------------
 --------------------------------------------------------------------------------
 
-parseDecs :: String -> Q [Dec]
-parseDecs = parse $ many decP
+parseDecs :: Bool -> String -> Q [Dec]
+parseDecs simpl = parse simpl $ many decP
 
-parseType :: String -> Q (Type, [Name])
-parseType = parse typeP
+parseType :: Bool -> String -> Q (Type, [Name])
+parseType simpl = parse simpl typeP
 
 --------------------------------------------------------------------------------
 -- Parser Definition -----------------------------------------------------------
@@ -59,12 +59,13 @@ type Parser = ParsecT String ParserState Q
 
 data ParserState =
   PS { ps_startLoc   :: Loc
+     , ps_buildSimpl :: Bool
      , ps_implicitTV :: S.HashSet String
      }
 
 
-parse :: Parser a -> String -> Q a
-parse p src = do
+parse :: Bool -> Parser a -> String -> Q a
+parse simpl p src = do
   loc    <- location
   result <- go loc
   case result of
@@ -74,11 +75,16 @@ parse p src = do
       return result
   where
     go loc =
-      runParserT (whiteSpace *> p <* eof) (PS loc mempty) (loc_filename loc) src
+      runParserT (whiteSpace *> p <* eof) (PS loc simpl mempty) (loc_filename loc) src
 
 addImplicitTV :: String -> Parser ()
 addImplicitTV tv =
   modifyState (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
+
+pickSimpl :: a -> a -> Parser a
+pickSimpl x y = do
+  simpl <- ps_buildSimpl <$> getState
+  return $ if simpl then x else y
 
 --------------------------------------------------------------------------------
 -- Utility Functions -----------------------------------------------------------
@@ -267,7 +273,7 @@ typeP' inParens = do
     (Left (TyConOp _ n), Nothing) ->
       return $ ConT n
     (Right i, Just o) ->
-      return $ funT (bind b i) o
+      pickSimpl (funT i o) $ funT (bind b i) o
     (Right t, Nothing) ->
       return t
 
@@ -307,8 +313,9 @@ refined = braces $ do
     Left (TyConOp p _) ->
       raiseErrAt p errTyConOp
     Right t ->
-      option t $ refine (bind (Just b) t) <$> (reservedOp "|" *> reft)
-
+      option t $ do
+        r <- reservedOp "|" *> reft
+        pickSimpl t $ refine (bind (Just b) t) r
 
 tyVarArg :: Parser Type
 tyVarArg = do
