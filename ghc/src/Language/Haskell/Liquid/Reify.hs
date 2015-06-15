@@ -148,7 +148,7 @@ reifyExpr ty = (`go` ty) =<< ask
         ECon <$> reifyConstant c
       | tc == pc_EBdr wis, [s] <- as =
         EVar <$> reifySymbol s
-      | tc == pc_ECtr wis, [t] <- as =
+      | tc == pc_ECtr wis, [_, t] <- as =
         (EVar . val) <$> reifyLocated reifyDataCon t
       | tc == pc_ENeg wis, [e] <- as =
         ENeg <$> reifyExpr e
@@ -199,7 +199,7 @@ reifyBop ty = (`go` ty) =<< ask
 --------------------------------------------------------------------------------
 
 reifyDataCon :: GhcMonad m => Type -> WiredM m Symbol
-reifyDataCon (TyConApp tc [])
+reifyDataCon (TyConApp tc _)
   | Just dc <- isPromotedDataCon_maybe tc =
     return $ varSymbol $ dataConWorkId dc
 reifyDataCon ty =
@@ -248,7 +248,7 @@ reifyBind ty = (`go` ty) =<< ask
 reifyLocated :: GhcMonad m => (Type -> WiredM m a) -> Type -> WiredM m (Located a)
 reifyLocated f ty = (`go` ty) =<< ask
   where
-    go wis (TyConApp tc [filename, startLine, startCol, endLine, endCol, x])
+    go wis (TyConApp tc [_, filename, startLine, startCol, endLine, endCol, x])
       | tc == pc_L wis = do
         filename'  <- reifyString filename
         startLine' <- fromIntegral <$> reifyNat startLine

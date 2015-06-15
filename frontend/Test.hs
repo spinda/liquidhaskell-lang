@@ -14,9 +14,9 @@ id' x = x
 id'' :: [lq| a -> a |]
 id'' x = x
 
-[lq| add :: Nat -> Nat -> Nat |]
+[lq| add :: Wow Nat -> Nat -> Nat |]
 add x y = plus x y
   where
-    plus :: [lq| Wow Nat -> Nat -> Nat |]
+    plus :: [lq| Nat -> Nat -> Nat |]
     plus x y = x + y
 
