@@ -17,6 +17,8 @@ module Language.Haskell.Liquid.RType (
   , Bop(..)
   ) where
 
+-- TODO: Rename this module
+
 import GHC.TypeLits
 
 --------------------------------------------------------------------------------
