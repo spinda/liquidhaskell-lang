@@ -16,6 +16,7 @@ library
                        liquid-fixpoint,
                        liquidhaskell-lang,
                        mtl,
+                       parsec,
                        pretty,
                        template-haskell,
                        unordered-containers

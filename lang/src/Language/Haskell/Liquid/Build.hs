@@ -89,11 +89,11 @@ toNat = LitT . NumTyLit . fromIntegral
 -- Type-Level Annotations ------------------------------------------------------
 --------------------------------------------------------------------------------
 
-bind :: Located String -> Type -> Type
-bind x a = ConT ''Bind `AppT` located (toSymbol <$> x) `AppT` a
+bind :: String -> Type -> Type
+bind x a = ConT ''Bind `AppT` toSymbol x `AppT` a
 
-refine :: Type -> Reft -> Type
-refine a r = ConT ''Refine `AppT` a `AppT` unReft r
+refine :: Type -> String -> Reft -> Type
+refine a b r = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
 
 
 located :: Located Type -> Type
@@ -115,8 +115,8 @@ located (Located start t end) =
 -- Reft ------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-rPred :: Located Pred -> Reft
-rPred = Reft . located . fmap unPred
+rPred :: Pred -> Reft
+rPred = Reft . unPred
 
 --------------------------------------------------------------------------------
 -- Pred ------------------------------------------------------------------------
@@ -159,8 +159,8 @@ pTop = Pred $ PromotedT 'PTop
 eConNat :: Integer -> Expr
 eConNat = Expr . (PromotedT 'ECon `AppT`) . cNat
 
-eBdr :: Located String -> Expr
-eBdr = Expr . (PromotedT 'EBdr `AppT`) . located . fmap toSymbol
+eBdr :: String -> Expr
+eBdr = Expr . (PromotedT 'EBdr `AppT`) . toSymbol
 
 eCtr :: Located String -> Expr
 eCtr = Expr . (PromotedT 'ECtr `AppT`) . located . fmap (PromotedT . mkName)

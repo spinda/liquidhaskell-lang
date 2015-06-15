@@ -46,7 +46,7 @@ data RType tc tv r
                , rt_reft  :: !r
                }
 
-  | RFun       { rt_bind :: !String
+  | RFun       { rt_bind :: !Symbol
                , rt_in   :: !(RType tc tv r)
                , rt_out  :: !(RType tc tv r)
                , rt_reft :: !r

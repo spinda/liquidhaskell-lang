@@ -163,11 +163,15 @@ lookupTHName :: GhcMonad m => String -> (TyThing -> Maybe a) -> TH.Name -> m a
 lookupTHName desc f th = do
   hscEnv <- getSession
   name   <- maybe err return =<< (liftIO $ initTcForLookup hscEnv $ lookupThName_maybe th)
-  thing  <- (f =<<) <$> lookupGlobalName name 
-  maybe err return thing
+  thing  <- maybe err' return =<< lookupGlobalName name 
+  maybe err'' return $ f thing
   where
-    err = throwGhcException $ ProgramError $
+    err = panic $
       "Not in scope: " ++ desc ++ " '" ++ render (TH.to_HPJ_Doc $ TH.ppr th) ++ "'"
+    err' = panic $
+      "Noot in scope: " ++ desc ++ " '" ++ render (TH.to_HPJ_Doc $ TH.ppr th) ++ "'"
+    err'' = panic $
+      "Nooot in scope: " ++ desc ++ " '" ++ render (TH.to_HPJ_Doc $ TH.ppr th) ++ "'"
 
 lookupTHTyCon :: GhcMonad m => TH.Name -> m TyCon
 lookupTHTyCon = lookupTHName "type constructor or class" f

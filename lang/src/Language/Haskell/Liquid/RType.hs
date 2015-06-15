@@ -25,8 +25,8 @@ import GHC.TypeLits
 -- Embedded Type Annotations ---------------------------------------------------
 --------------------------------------------------------------------------------
 
-type Bind (x :: L Symbol) a = a
-type Refine a (p :: L Pred) = a
+type Bind (b :: Symbol) a = a
+type Refine a (b :: Symbol) (p :: Pred) = a
 
 data L a = L Symbol Nat Nat Nat Nat a
 
@@ -48,7 +48,7 @@ data Pred :: * where
 
 data Expr :: * where
   ECon :: Constant      -> Expr
-  EBdr :: L Symbol      -> Expr
+  EBdr :: Symbol        -> Expr
   ECtr :: forall a. L a -> Expr
   ENeg :: Expr -> Expr
   EBin :: Bop  -> Expr -> Expr -> Expr

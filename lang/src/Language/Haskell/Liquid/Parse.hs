@@ -180,8 +180,8 @@ varid, conid :: Parser String
 varid = named "variable identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = lower <|> char '_' }
 conid = named "constructor identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = upper              }
 
-binder :: Parser (Located String)
-binder = located $ named "binder" $ T.identifier $ T.makeTokenParser $ haskellDef
+binder :: Parser String
+binder = named "binder" $ T.identifier $ T.makeTokenParser $ haskellDef
   { T.identStart = lower <|> char '_'
   , T.reservedNames = T.reservedNames haskellDef ++ ["true", "false", "not", "mod"]
   }
@@ -264,6 +264,7 @@ typeP = do
 
 typeP' :: Bool -> Parser Type
 typeP' inParens = do
+  bp <- getPosition
   bm <- optionMaybe $ try (binder <* colon)
   t1 <- arg
   t2 <- optionMaybe $ reservedOp "->" *> typeP' False
@@ -271,7 +272,7 @@ typeP' inParens = do
     (_, Left (TyConOp p _), _) | not inParens || isJust t2 ->
       raiseErrAt p errTyConOp
     (Just b, _, Nothing) ->
-      raiseErrAt (l_start b) errBinderReturn
+      raiseErrAt bp errBinderReturn
     (Nothing, Left (TyConOp _ n), Nothing) ->
       return $ ConT n
     (Nothing, Right t, Nothing) ->
@@ -319,7 +320,7 @@ refined = braces $ do
     Right t ->
       option t $ do
         r <- reservedOp "|" *> reft
-        pickSimpl t $ refine (bind b t) r
+        pickSimpl t $ refine t b r
 
 tyVarArg :: Parser Type
 tyVarArg = do
@@ -344,7 +345,7 @@ errTyConOp =
 --------------------------------------------------------------------------------
 
 reft :: Parser Reft
-reft = rPred <$> located pred
+reft = rPred <$> pred
 
 --------------------------------------------------------------------------------
 -- Pred ------------------------------------------------------------------------
