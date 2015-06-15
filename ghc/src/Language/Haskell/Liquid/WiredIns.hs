@@ -8,6 +8,8 @@ module Lanugage.Haskell.Liquid.WiredIns (
 
 import GHC
 
+import ConLike
+
 import Control.Monad.Reader
 
 import qualified Language.Haskell.TH.Syntax as TH
@@ -37,4 +39,23 @@ data WiredIns =
 
 loadWiredIns :: GhcMonad m => m WiredIns
 loadWiredIns
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+lookupTHName :: GhcMonad m => String -> (TyThing -> Maybe a) -> TH.Name -> m a
+lookupTHName
+
+lookupTHTyCon :: GhcMonad m => TH.Name -> m TyCon
+lookupTHTyCon = lookupTHName "type constructor" f
+  where
+    f (ATyCon tc) = Just tc
+    f _           = Nothing
+
+lookupTHDataCon :: GhcMonad m => TH.Name -> m TyCon
+lookupTHDataCon = lookupTHName "data constructor" f
+  where
+    f (AConLike (RealDataCon dc)) = Just dc
+    f _                           = Nothing
 
