@@ -7,9 +7,15 @@ cabal-version:         >=1.10
 
 library
   exposed-modules:     LiquidHaskell
+  other-modules:       Language.Haskell.Liquid.Build,
+                       Language.Haskell.Liquid.Parse,
+                       Language.Haskell.Liquid.RType,
+                       Language.Haskell.Liquid.Util
   build-depends:       base, 
-                       liquidhaskell-core,
-                       template-haskell
+                       mtl,
+                       parsec,
+                       template-haskell,
+                       unordered-containers
   hs-source-dirs:      src
   default-language:    Haskell2010
 
