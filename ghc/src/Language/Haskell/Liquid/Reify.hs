@@ -1,4 +1,4 @@
-module Lanugage.Haskell.Liquid.Reify (
+module Language.Haskell.Liquid.Reify (
     reifyRTy
   , reifyRReft
   , reifyReft

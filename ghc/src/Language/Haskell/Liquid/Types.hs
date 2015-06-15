@@ -1,16 +1,4 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-
-instance Out Name where
-  doc = docPrec 0
-  docPrec n = text . showSDocUnsafe . pprPrec (fromIntegral n)
-
-instance Out TyCon where
-  doc = docPrec 0
-  docPrec n = text . showSDocUnsafe . pprPrec (fromIntegral n)
-
-instance Out Var where
-  doc = docPrec 0
-  docPrec n = text . showSDocUnsafe . pprPrec (fromIntegral n)
 {-# LANGUAGE DeriveFoldable     #-}
 {-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE DeriveGeneric      #-}
@@ -23,13 +11,14 @@ module Language.Haskell.Liquid.Types (
   , SpecType
   ) where
 
-import GHC
+import GHC hiding (Located)
 
 import Outputable (pprPrec, showSDocUnsafe)
+import Var
 
-import Data.Data
+import Data.Data (Data)
 import Data.List
-import Data.Typeable
+import Data.Typeable (Typeable)
 
 import GHC.Generics
 
@@ -93,6 +82,10 @@ instance (Out tc, Out tv, Out r) => Out (RType tc tv r)
 instance Out a => Out (Located a) where
   doc = docPrec 0
   docPrec n = docPrec n . val
+
+instance Out Symbol where
+  doc = docPrec 0
+  docPrec n = docPrec n . symbolString
 
 instance Out Constant where
   doc = docPrec 0
