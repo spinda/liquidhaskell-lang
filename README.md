@@ -1,7 +1,8 @@
 # lh-gsoc2015
 
-## Immediate Next Steps
+## Short-Term Plan
 
+ 1. **Integrate into main LiquidHaskell pipeline, set up basic test cases**
  1. Handle type application edge cases
  1. Add type synonym structure and extract to it
  1. Swap out modInfoTyThings for traversal that pulls out non-exported
