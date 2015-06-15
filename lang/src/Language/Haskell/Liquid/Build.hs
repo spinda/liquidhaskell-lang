@@ -1,8 +1,11 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Language.Haskell.Liquid.Build (
-    -- * AST Newtypes
-    Reft, unReft
+    -- * AST-Building Types
+    Located(..)
+
+  , Reft, unReft
   , Pred, unPred
   , Expr, unExpr
 
@@ -34,20 +37,31 @@ module Language.Haskell.Liquid.Build (
   , eBot
   ) where
 
+import Text.Parsec.Pos
+
 import Language.Haskell.TH.Syntax hiding (Pred)
 
 import Language.Haskell.Liquid.RType hiding (Pred, Expr)
 
 --------------------------------------------------------------------------------
--- AST Newtypes ----------------------------------------------------------------
+-- AST-Building Types ----------------------------------------------------------
 --------------------------------------------------------------------------------
 
-newtype Reft = Reft Pred
+data Located a =
+  Located
+    { l_start :: SourcePos
+    , l_value :: a
+    , l_end   :: SourcePos
+    }
+  deriving (Functor)
+
+
+newtype Reft = Reft Type
 newtype Pred = Pred Type
 newtype Expr = Expr Type
 
 unReft :: Reft -> Type
-unReft (Reft r) = unPred r
+unReft (Reft r) = r
 {-# INLINE unReft #-}
 
 unPred :: Pred -> Type
@@ -65,23 +79,44 @@ unExpr (Expr e) = e
 funT :: Type -> Type -> Type
 funT t = (ArrowT `AppT` t `AppT`)
 
+toSymbol :: String -> Type
+toSymbol = LitT . StrTyLit
+
+toNat :: Int -> Type
+toNat = LitT . NumTyLit . fromIntegral
+
 --------------------------------------------------------------------------------
 -- Type-Level Annotations ------------------------------------------------------
 --------------------------------------------------------------------------------
 
-bind :: Maybe String -> Type -> Type
-bind (Just x) a = ConT ''Bind `AppT` LitT (StrTyLit x) `AppT` a
-bind Nothing  a = a
+bind :: Located String -> Type -> Type
+bind x a = ConT ''Bind `AppT` located (toSymbol <$> x) `AppT` a
 
 refine :: Type -> Reft -> Type
 refine a r = ConT ''Refine `AppT` a `AppT` unReft r
+
+
+located :: Located Type -> Type
+located (Located start t end) =
+  PromotedT 'L `AppT` filename
+               `AppT` startLine
+               `AppT` startCol
+               `AppT` endLine
+               `AppT` endCol
+               `AppT` t
+  where
+    filename  = toSymbol $ sourceName   start
+    startLine = toNat    $ sourceLine   start
+    startCol  = toNat    $ sourceColumn start
+    endLine   = toNat    $ sourceLine   end
+    endCol    = toNat    $ sourceColumn end
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-rPred :: Pred -> Reft
-rPred = Reft
+rPred :: Located Pred -> Reft
+rPred = Reft . located . fmap unPred
 
 --------------------------------------------------------------------------------
 -- Pred ------------------------------------------------------------------------
@@ -124,11 +159,11 @@ pTop = Pred $ PromotedT 'PTop
 eConNat :: Integer -> Expr
 eConNat = Expr . (PromotedT 'ECon `AppT`) . cNat
 
-eBdr :: String -> Expr
-eBdr = Expr . (PromotedT 'EBdr `AppT`) . LitT . StrTyLit
+eBdr :: Located String -> Expr
+eBdr = Expr . (PromotedT 'EBdr `AppT`) . located . fmap toSymbol
 
-eCtr :: String -> Expr
-eCtr = Expr . (PromotedT 'ECtr `AppT`) . PromotedT . mkName
+eCtr :: Located String -> Expr
+eCtr = Expr . (PromotedT 'ECtr `AppT`) . located . fmap (PromotedT . mkName)
 
 eNeg :: Expr -> Expr
 eNeg (Expr e) = Expr $ PromotedT 'ENeg `AppT` e

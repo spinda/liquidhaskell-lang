@@ -93,6 +93,9 @@ pickSimpl x y = do
 named :: String -> Parser a -> Parser a
 named s p = p <?> s
 
+located :: Parser a -> Parser (Located a)
+located p = Located <$> getPosition <*> p <*> getPosition
+
 startErrAt :: Loc -> ParseError -> ParseError
 startErrAt loc err = setErrorPos errPos' err
   where
@@ -177,8 +180,8 @@ varid, conid :: Parser String
 varid = named "variable identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = lower <|> char '_' }
 conid = named "constructor identifier" $ T.identifier $ T.makeTokenParser $ haskellDef { T.identStart = upper              }
 
-binder :: Parser String
-binder = named "binder" $ T.identifier $ T.makeTokenParser $ haskellDef
+binder :: Parser (Located String)
+binder = located $ named "binder" $ T.identifier $ T.makeTokenParser $ haskellDef
   { T.identStart = lower <|> char '_'
   , T.reservedNames = T.reservedNames haskellDef ++ ["true", "false", "not", "mod"]
   }
@@ -261,21 +264,22 @@ typeP = do
 
 typeP' :: Bool -> Parser Type
 typeP' inParens = do
-  bp <- getPosition
-  b  <- optionMaybe $ try (binder <* colon)
+  bm <- optionMaybe $ try (binder <* colon)
   t1 <- arg
   t2 <- optionMaybe $ reservedOp "->" *> typeP' False
-  case (t1, t2) of
-    (_, Nothing) | isJust b ->
-      raiseErrAt bp errBinderReturn
-    (Left (TyConOp p _), _) | not inParens || isJust t2 ->
+  case (bm, t1, t2) of
+    (_, Left (TyConOp p _), _) | not inParens || isJust t2 ->
       raiseErrAt p errTyConOp
-    (Left (TyConOp _ n), Nothing) ->
+    (Just b, _, Nothing) ->
+      raiseErrAt (l_start b) errBinderReturn
+    (Nothing, Left (TyConOp _ n), Nothing) ->
       return $ ConT n
-    (Right i, Just o) ->
-      pickSimpl (funT i o) $ funT (bind b i) o
-    (Right t, Nothing) ->
+    (Nothing, Right t, Nothing) ->
       return t
+    (Nothing, Right i, Just o) ->
+      return $ funT i o
+    (Just b, Right i, Just o) ->
+      pickSimpl (funT i o) $ funT (bind b i) o
 
 
 arg :: Parser (Either TyConOp Type)
@@ -315,7 +319,7 @@ refined = braces $ do
     Right t ->
       option t $ do
         r <- reservedOp "|" *> reft
-        pickSimpl t $ refine (bind (Just b) t) r
+        pickSimpl t $ refine (bind b t) r
 
 tyVarArg :: Parser Type
 tyVarArg = do
@@ -340,7 +344,7 @@ errTyConOp =
 --------------------------------------------------------------------------------
 
 reft :: Parser Reft
-reft = rPred <$> pred
+reft = rPred <$> located pred
 
 --------------------------------------------------------------------------------
 -- Pred ------------------------------------------------------------------------
@@ -397,7 +401,7 @@ eterm = parens expr
     <|> ite
     <|> (eConNat <$> natural)
     <|> (eBdr <$> binder)
-    <|> (eCtr <$> conid)
+    <|> (eCtr <$> located conid)
 
 ite :: Parser Expr
 ite = eIte <$> (reservedOp "if"   *> pred)

@@ -7,6 +7,7 @@ module Language.Haskell.Liquid.RType (
     -- * Embedded Type Annotations
     Bind
   , Refine
+  , L(..)
 
     -- * Embedded Refinement AST
   , Pred(..)
@@ -22,8 +23,10 @@ import GHC.TypeLits
 -- Embedded Type Annotations ---------------------------------------------------
 --------------------------------------------------------------------------------
 
-type Bind (x :: Symbol) a = a
-type Refine a (p :: Pred) = a
+type Bind (x :: L Symbol) a = a
+type Refine a (p :: L Pred) = a
+
+data L a = L Symbol Nat Nat Nat Nat a
 
 --------------------------------------------------------------------------------
 -- Embedded Refinement AST -----------------------------------------------------
@@ -42,9 +45,9 @@ data Pred :: * where
   PTop   :: Pred
 
 data Expr :: * where
-  ECon :: Constant    -> Expr
-  EBdr :: Symbol      -> Expr
-  ECtr :: forall a. a -> Expr
+  ECon :: Constant      -> Expr
+  EBdr :: L Symbol      -> Expr
+  ECtr :: forall a. L a -> Expr
   ENeg :: Expr -> Expr
   EBin :: Bop  -> Expr -> Expr -> Expr
   EIte :: Pred -> Expr -> Expr -> Expr
