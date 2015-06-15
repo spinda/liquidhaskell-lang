@@ -6,66 +6,27 @@ module Main (
     main
   ) where
 
--- TODO: Split up this module, move parts to liquidhaskell-ghc
+import GHC
+import GHC.Paths
 
-import           GHC
-import           GHC.Desugar
-import           GHC.Paths                              (libdir)
+import Digraph
+import DynFlags
+import HsImpExp
+import MonadUtils
+import Outputable
+import Var
 
-import           Annotations
-import           Bag
-import           Convert
-import           CoreMonad
-import           Digraph
-import           DynFlags
-import           FastString
-import           GhcMonad
-import           HscMain
-import           HscTypes
-import           MonadUtils
-import           Name
-import           OccName
-import           Outputable
-import           RdrName
-import           Serialized
-import           TcRnDriver
-import           TyCon
-import           Type
-import           UniqFM
-import           Unique
-import           Var
+import Data.Generics.Aliases
+import Data.Generics.Schemes
 
-import           HsBinds
-import           HsDecls
-import           HsTypes
+import System.Environment
 
-import           Control.Arrow
-import           Control.Monad
+import Text.PrettyPrint.GenericPretty
+import Text.PrettyPrint.HughesPJ
 
-import           Data.Data
-import           Data.Maybe
-import           Data.Typeable
-import           Data.Word
-
-import qualified Data.IntMap.Strict                     as M
-
-import           Data.Generics.Aliases
-import           Data.Generics.Schemes
-import           Data.Generics.Text
-
-import           System.Environment
-
-import           Text.PrettyPrint.GenericPretty
-import           Text.PrettyPrint.HughesPJ
-
-import qualified Language.Haskell.TH.Syntax             as TH
-
-import           Language.Haskell.Liquid.Expand
-import           Language.Haskell.Liquid.Resolve
-import           Language.Haskell.Liquid.RType
-import           Language.Haskell.Liquid.SpecType
-
-import           Language.Haskell.Liquid.Quasi.Metadata
+import Language.Haskell.Liquid.Extract
+import Language.Haskell.Liquid.Types
+import Language.Haskell.Liquid.WiredIns
 
 --------------------------------------------------------------------------------
 -- Top-Level Entry Point -------------------------------------------------------
@@ -81,8 +42,7 @@ main =
         , ghcMode      = CompManager
         , hscTarget    = HscInterpreted
         , packageFlags = packageFlags dflags ++
-            [ HidePackage "liquidhaskell-lang"
-            , ExposePackage (PackageArg "liquidhaskell-frontend") (ModRenaming True [("Language.Haskell.Liquid.Quasi", "LiquidHaskell")])
+            [ ExposePackage (PackageArg "liquidhaskell-lang") (ModRenaming True [])
             ]
         }
 
@@ -90,112 +50,49 @@ main =
       targets    <- mapM (`guessTarget` Nothing) targetArgs
       setTargets targets
 
-      graph      <- depanal [] True
-      typeData   <- concatMapM extractTypeData $ flattenSCCs $ topSortModuleGraph False graph Nothing
+      graph <- depanal [] True
 
-      let instantiated = map (\(name, ty, ann) -> (name, instantiateRTy ty ann)) typeData
-      resolved        <- mapM (\(name, ty) -> (name, ) <$> resolveRTy ["X"] (srcSpanToLoc $ nameSrcSpan name) ty) instantiated
-      let expanded     = expandRTys resolved
+      setContext [IIDecl $ simpleImportDecl $ mkModuleName "Language.Haskell.Liquid.RType"]
+      typeData <- runWiredM $ concatMapM extractTypeData $ flattenSCCs $ topSortModuleGraph False graph Nothing
 
-      liftIO $ mapM_ (putStrLn . render . doc) expanded
-
-srcSpanToLoc :: SrcSpan -> TH.Loc
-srcSpanToLoc (RealSrcSpan s) = TH.Loc
-  { TH.loc_filename = unpackFS $ srcSpanFile s
-  , TH.loc_package  = "TODO"
-  , TH.loc_module   = "TODO"
-  , TH.loc_start    = (srcSpanStartLine s, srcSpanStartCol s)
-  , TH.loc_end      = (srcSpanEndLine   s, srcSpanEndCol   s)
-  }
+      liftIO $ putStrLn "types..."
+      mapM_ printTypeData typeData
+  where
+    printTypeData (var, ty) = do
+      var' <- pshow var
+      liftIO $ do
+        putStrLn $ "=== " ++ var' ++ " ==="
+        putStrLn $ render $ doc ty
 
 --------------------------------------------------------------------------------
 -- Type Data Extraction --------------------------------------------------------
 --------------------------------------------------------------------------------
 
-extractTypeData :: GhcMonad m => ModSummary -> m [(Name, Type, AnnType)]
+extractTypeData :: GhcMonad m => ModSummary -> WiredM m [(Var, SpecType)]
 extractTypeData summ = do
-  parsed      <- parseModule summ
-  let parsed'  = parsed { pm_parsed_source = editQuasiQuotes $ pm_parsed_source parsed }
+  parsed  <- parseModule summ
+  typecheckModule parsed
+
+  let parsed' = parsed { pm_mod_summary = (pm_mod_summary parsed) { ms_textual_imps = rewrite $ ms_textual_imps $ pm_mod_summary parsed
+                                                                  }
+                       , pm_parsed_source = rewrite' $ pm_parsed_source parsed
+                       }
   typechecked <- typecheckModule parsed'
-  desugared   <- desugarModule typechecked
+  loadModule typechecked
 
-  loadModule desugared
   setContext [IIModule $ moduleName $ ms_mod summ]
-
-  let varMap = buildVarMap $ tm_typechecked_source typechecked
-
-  let topLevelAnns = annotationsOfType $ dm_core_module desugared
-  -- TODO: Only extract annotations on 'LiquidHaskell here
-  let localAnns    = annotationsOfType $ dm_core_module desugared
-
-  topLevel <- mapM extractTopLevel topLevelAnns
-  local    <- mapM (extractLocal varMap . snd) localAnns
-  return $ topLevel ++ local
-
-extractTopLevel :: GhcMonad m => (Name, AnnType) -> m (Name, Type, AnnType)
-extractTopLevel (name, ty) = do
-  Just thing <- lookupName name
-  return (name, ofThing thing, ty)
+  extractTopSigs typechecked
   where
-    ofThing (AnId id) =
-      idType id
-    ofThing (AConLike _) =
-      error "TODO: unexpected AConLike"
-    ofThing (ATyCon tc) =
-      fromMaybe (error "TODO: unexpected non-synonym ATyCon") (synTyConRhs_maybe tc)
-    ofThing (ACoAxiom _) =
-      error "TODO: unexpected ACoAxiom"
+    rewrite = everywhere (mkT $ replaceModule (mkModuleName "LiquidHaskell") (mkModuleName "LiquidHaskell_"))
+    rewrite' = everywhere (mkT $ replaceModule (mkModuleName "LiquidHaskell") (mkModuleName "LiquidHaskell_"))
 
-extractLocal :: GhcMonad m => M.IntMap Id -> LqLocal -> m (Name, Type, AnnType)
-extractLocal varMap (LqLocal id ty) = do
-  let Just var = M.lookup id varMap
-  return (getName var, varType var, ty)
+replaceModule :: ModuleName -> ModuleName -> ModuleName -> ModuleName
+replaceModule orig repl mod
+  | mod == orig = repl
+  | otherwise   = mod
 
 --------------------------------------------------------------------------------
--- Source Annotation Retrieval -------------------------------------------------
---------------------------------------------------------------------------------
-
-annotationsOfType :: (Data a, Typeable a) => ModGuts -> [(Name, a)]
-annotationsOfType = mapMaybe annotationOfType . mg_anns
-
-annotationOfType :: (Data a, Typeable a) => Annotation -> Maybe (Name, a)
-annotationOfType (Annotation (NamedTarget name) payload) =
-  (name, ) <$> fromSerialized deserializeWithData payload
-annotationOfType _ = Nothing
-
---------------------------------------------------------------------------------
--- `lq` QuasiQuote Pre-Processing ----------------------------------------------
---------------------------------------------------------------------------------
-
--- TODO: Only edit `lq` quotes!
--- TODO: Combine these syb traversals
--- FIXME: This area is very ugly!
-
-editQuasiQuotes :: ParsedSource -> ParsedSource
-editQuasiQuotes =
-  everywhere (mkT editSigQuote) . everywhere (mkT editSynQuote)
-
-editSigQuote :: Sig RdrName -> Sig RdrName
-editSigQuote (TypeSig [name] (L l (HsForAllTy Implicit sp tvb ctxt (L l' (HsQuasiQuoteTy (HsQuasiQuote id pos fs))))) post) =
-  TypeSig [name] (L l $ HsForAllTy Implicit sp tvb ctxt $ L l' $ HsQuasiQuoteTy $ HsQuasiQuote id pos $ appendFS (appendFS (occNameFS $ rdrNameOcc $ unLoc name) (mkFastString "|v")) fs) post
-editSigQuote t = t
-
-editSynQuote :: TyClDecl RdrName -> TyClDecl RdrName
-editSynQuote (SynDecl name tvs (L l (HsQuasiQuoteTy (HsQuasiQuote id pos fs))) fvs) =
-  SynDecl name tvs (L l $ HsQuasiQuoteTy $ HsQuasiQuote id pos $ appendFS (appendFS (occNameFS $ rdrNameOcc $ unLoc name) (mkFastString "|t")) fs) fvs
-editSynQuote t = t
-
---------------------------------------------------------------------------------
--- Extract All Vars from AST ---------------------------------------------------
---------------------------------------------------------------------------------
-
-buildVarMap :: TypecheckedSource -> M.IntMap Id
-buildVarMap = everything mappend (mkQ mempty ofId)
-  where
-    ofId id = M.singleton (getKey $ getUnique id) id
-
---------------------------------------------------------------------------------
--- GHC Utility Functions -------------------------------------------------------
+-- Utility Functions -----------------------------------------------------------
 --------------------------------------------------------------------------------
 
 pshow :: (Outputable a, GhcMonad m) => a -> m String

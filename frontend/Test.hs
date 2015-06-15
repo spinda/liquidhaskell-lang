@@ -1,11 +1,12 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-module Test () where
+module Test where
 
 import LiquidHaskell
 
 type Nat = [lq| { v:Int | 0 <= v } |]
-type Wow a = [lq| { v:a | 0 == X } |]
+type Wow a = [lq| { v:a | a == 0 || a == Nothing || a == Left } |]
 
 [lq| id' :: a -> a |]
 id' x = x
