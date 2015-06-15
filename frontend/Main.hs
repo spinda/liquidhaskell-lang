@@ -73,6 +73,7 @@ extractTypeData summ = do
   parsed  <- parseModule summ
   typecheckModule parsed
 
+  -- TODO: Replace (messy) syb operation with targeted substitution (imports)
   let parsed' = parsed { pm_mod_summary = (pm_mod_summary parsed) { ms_textual_imps = rewrite $ ms_textual_imps $ pm_mod_summary parsed
                                                                   }
                        , pm_parsed_source = rewrite' $ pm_parsed_source parsed
