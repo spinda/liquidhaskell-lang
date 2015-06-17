@@ -11,4 +11,5 @@
  1. Add expression parameter support: separate expression parameters from
     binders in parser/QQ
  1. Expression aliases
+ 1. FTycon embed annotations
 
