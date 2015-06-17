@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE Rank2Types #-}
@@ -15,11 +16,19 @@ module Language.Haskell.Liquid.RType (
   , Constant(..)
   , Brel(..)
   , Bop(..)
+
+    -- * FTycon Embeds
+  , Embed(..)
   ) where
 
 -- TODO: Rename this module
 
+import Data.Data
+import Data.Typeable
+
 import GHC.TypeLits
+
+import Language.Haskell.TH.Syntax (Name)
 
 --------------------------------------------------------------------------------
 -- Embedded Type Annotations ---------------------------------------------------
@@ -61,4 +70,10 @@ data Constant = I Nat
 data Brel = Eq | Ne | Gt | Ge | Lt | Le | Ueq | Une
 
 data Bop  = Plus | Minus | Times | Div | Mod
+
+--------------------------------------------------------------------------------
+-- FTycon Embeds ---------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+data Embed = Embed Name String deriving (Data, Typeable)
 
