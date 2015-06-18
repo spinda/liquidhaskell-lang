@@ -93,8 +93,12 @@ pickSimpl x y = do
 named :: String -> Parser a -> Parser a
 named s p = p <?> s
 
-located :: Parser a -> Parser (Located a)
-located p = Located <$> getPosition <*> p <*> getPosition
+located :: Parser a -> Parser (Span, a)
+located p = do
+  s <- getPosition
+  x <- p
+  e <- getPosition -- TODO: End position minus whitespace!
+  return (mkSpan s e, x)
 
 startErrAt :: Loc -> ParseError -> ParseError
 startErrAt loc err = setErrorPos errPos' err
@@ -265,22 +269,22 @@ typeP = do
 typeP' :: Bool -> Parser Type
 typeP' inParens = do
   bp <- getPosition
-  bm <- optionMaybe $ try (binder <* colon)
+  bm <- optionMaybe $ try (located binder <* colon)
   t1 <- arg
   t2 <- optionMaybe $ reservedOp "->" *> typeP' False
   case (bm, t1, t2) of
     (_, Left (TyConOp p _), _) | not inParens || isJust t2 ->
       raiseErrAt p errTyConOp
-    (Just b, _, Nothing) ->
-      raiseErrAt bp errBinderReturn
     (Nothing, Left (TyConOp _ n), Nothing) ->
       return $ ConT n
-    (Nothing, Right t, Nothing) ->
-      return t
+    (Nothing, Right i, Nothing) ->
+      return i
     (Nothing, Right i, Just o) ->
       return $ funT i o
-    (Just b, Right i, Just o) ->
-      pickSimpl (funT i o) $ funT (bind b i) o
+    (Just (span, b), Right i, Nothing) ->
+      pickSimpl i $ bind span b i
+    (Just (span, b), Right i, Just o) ->
+      pickSimpl (funT i o) $ funT (bind span b i) o
 
 
 arg :: Parser (Either TyConOp Type)
@@ -331,10 +335,6 @@ tyVarArg = do
 tyConArg :: Parser (Either TyConOp Type)
 tyConArg = fmap ConT <$> tyCon
 
-
-errBinderReturn :: String
-errBinderReturn =
-  "Binders outside of {braces} cannot appear in a function's return type"
 
 errTyConOp :: String
 errTyConOp =
@@ -402,7 +402,7 @@ eterm = parens expr
     <|> ite
     <|> (eConNat <$> natural)
     <|> (eBdr <$> binder)
-    <|> (eCtr <$> located conid)
+    <|> (uncurry eCtr <$> located conid)
 
 ite :: Parser Expr
 ite = eIte <$> (reservedOp "if"   *> pred)

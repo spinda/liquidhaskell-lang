@@ -2,12 +2,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Language.Haskell.Liquid.Build (
-    -- * AST-Building Types
-    Located(..)
-
-  , Reft, unReft
-  , Pred, unPred
-  , Expr, unExpr
+    -- * AST Newtypes
+    Span
+  , Reft
+  , Pred
+  , Expr
 
     -- * Type AST Utility Functions
   , funT
@@ -15,6 +14,7 @@ module Language.Haskell.Liquid.Build (
     -- * Type-Level Annotations 
   , bind
   , refine
+  , mkSpan
 
     -- * Reft
   , rPred
@@ -41,35 +41,32 @@ import Text.Parsec.Pos
 
 import Language.Haskell.TH.Syntax hiding (Pred)
 
-import Language.Haskell.Liquid.RType hiding (Pred, Expr)
+import Language.Haskell.Liquid.RType hiding (Expr, Pred, Span)
+import qualified Language.Haskell.Liquid.RType as RT
 
 --------------------------------------------------------------------------------
--- AST-Building Types ----------------------------------------------------------
+-- AST Newtypes ----------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Located a =
-  Located
-    { l_start :: SourcePos
-    , l_value :: a
-    , l_end   :: SourcePos
-    }
-  deriving (Functor)
+newtype Span = S Type
+newtype Reft = R Type
+newtype Pred = P Type
+newtype Expr = E Type
 
-
-newtype Reft = Reft Type
-newtype Pred = Pred Type
-newtype Expr = Expr Type
+unSpan :: Span -> Type
+unSpan (S s) = s
+{-# INLINE unSpan #-}
 
 unReft :: Reft -> Type
-unReft (Reft r) = r
+unReft (R r) = r
 {-# INLINE unReft #-}
 
 unPred :: Pred -> Type
-unPred (Pred p) = p
+unPred (P p) = p
 {-# INLINE unPred #-}
 
 unExpr :: Expr -> Type
-unExpr (Expr e) = e
+unExpr (E e) = e
 {-# INLINE unExpr #-}
 
 --------------------------------------------------------------------------------
@@ -89,21 +86,19 @@ toNat = LitT . NumTyLit . fromIntegral
 -- Type-Level Annotations ------------------------------------------------------
 --------------------------------------------------------------------------------
 
-bind :: String -> Type -> Type
-bind x a = ConT ''Bind `AppT` toSymbol x `AppT` a
+bind :: Span -> String -> Type -> Type
+bind span x a = ConT ''Bind `AppT` unSpan span `AppT` toSymbol x `AppT` a
 
 refine :: Type -> String -> Reft -> Type
 refine a b r = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
 
-
-located :: Located Type -> Type
-located (Located start t end) =
-  PromotedT 'L `AppT` filename
-               `AppT` startLine
-               `AppT` startCol
-               `AppT` endLine
-               `AppT` endCol
-               `AppT` t
+mkSpan :: SourcePos -> SourcePos -> Span
+mkSpan start end = S $ PromotedT 'RT.Span
+  `AppT` filename
+  `AppT` startLine
+  `AppT` startCol
+  `AppT` endLine
+  `AppT` endCol
   where
     filename  = toSymbol $ sourceName   start
     startLine = toNat    $ sourceLine   start
@@ -116,66 +111,66 @@ located (Located start t end) =
 --------------------------------------------------------------------------------
 
 rPred :: Pred -> Reft
-rPred = Reft . unPred
+rPred = R . unPred
 
 --------------------------------------------------------------------------------
 -- Pred ------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 pTrue :: Pred
-pTrue = Pred $ PromotedT 'PTrue
+pTrue = P $ PromotedT 'PTrue
 
 pFalse :: Pred
-pFalse = Pred $ PromotedT 'PFalse
+pFalse = P $ PromotedT 'PFalse
 
 pAnd :: Pred -> Pred -> Pred
-pAnd (Pred p1) (Pred p2) = Pred $ PromotedT 'PAnd `AppT` p1 `AppT` p2
+pAnd (P p1) (P p2) = P $ PromotedT 'PAnd `AppT` p1 `AppT` p2
 
 pOr :: Pred -> Pred -> Pred
-pOr (Pred p1) (Pred p2) = Pred $ PromotedT 'POr `AppT` p1 `AppT` p2
+pOr (P p1) (P p2) = P $ PromotedT 'POr `AppT` p1 `AppT` p2
 
 pNot :: Pred -> Pred
-pNot (Pred p) = Pred $ PromotedT 'PNot `AppT` p
+pNot (P p) = P $ PromotedT 'PNot `AppT` p
 
 pImp :: Pred -> Pred -> Pred
-pImp (Pred p1) (Pred p2) = Pred $ PromotedT 'PImp `AppT` p1 `AppT` p2
+pImp (P p1) (P p2) = P $ PromotedT 'PImp `AppT` p1 `AppT` p2
 
 pIff :: Pred -> Pred -> Pred
-pIff (Pred p1) (Pred p2) = Pred $ PromotedT 'PImp `AppT` p1 `AppT` p2
+pIff (P p1) (P p2) = P $ PromotedT 'PImp `AppT` p1 `AppT` p2
 
 pExp :: Expr -> Pred
-pExp (Expr e) = Pred $ PromotedT 'PExp `AppT` e
+pExp (E e) = P $ PromotedT 'PExp `AppT` e
 
 pAtom :: Brel -> Expr -> Expr -> Pred
-pAtom op (Expr e1) (Expr e2) = Pred $ PromotedT 'PAtom `AppT` brel op `AppT` e1 `AppT` e2
+pAtom op (E e1) (E e2) = P $ PromotedT 'PAtom `AppT` brel op `AppT` e1 `AppT` e2
 
 pTop :: Pred
-pTop = Pred $ PromotedT 'PTop
+pTop = P $ PromotedT 'PTop
 
 --------------------------------------------------------------------------------
 -- Expr ------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 eConNat :: Integer -> Expr
-eConNat = Expr . (PromotedT 'ECon `AppT`) . cNat
+eConNat = E . (PromotedT 'ECon `AppT`) . cNat
 
 eBdr :: String -> Expr
-eBdr = Expr . (PromotedT 'EBdr `AppT`) . toSymbol
+eBdr = E . (PromotedT 'EBdr `AppT`) . toSymbol
 
-eCtr :: Located String -> Expr
-eCtr = Expr . (PromotedT 'ECtr `AppT`) . located . fmap (ConT . mkName)
+eCtr :: Span -> String -> Expr
+eCtr span = E . (PromotedT 'ECtr `AppT` unSpan span `AppT`) . ConT . mkName
 
 eNeg :: Expr -> Expr
-eNeg (Expr e) = Expr $ PromotedT 'ENeg `AppT` e
+eNeg (E e) = E $ PromotedT 'ENeg `AppT` e
 
 eBin :: Bop -> Expr -> Expr -> Expr
-eBin op (Expr e1) (Expr e2) = Expr $ PromotedT 'EBin `AppT` bop op `AppT` e1 `AppT` e2
+eBin op (E e1) (E e2) = E $ PromotedT 'EBin `AppT` bop op `AppT` e1 `AppT` e2
 
 eIte :: Pred -> Expr -> Expr -> Expr
-eIte (Pred p) (Expr e1) (Expr e2) = Expr $ PromotedT 'EIte `AppT` p `AppT` e1 `AppT` e2
+eIte (P p) (E e1) (E e2) = E $ PromotedT 'EIte `AppT` p `AppT` e1 `AppT` e2
 
 eBot :: Expr
-eBot = Expr $ PromotedT 'EBot
+eBot = E $ PromotedT 'EBot
 
 
 cNat :: Integer -> Type
