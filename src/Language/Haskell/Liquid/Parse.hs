@@ -46,7 +46,7 @@ import           Language.Haskell.Liquid.Util
 --------------------------------------------------------------------------------
 
 parseDecs :: Bool -> String -> Q [Dec]
-parseDecs simpl = parse simpl $ many decP
+parseDecs simpl = parse simpl $ concat <$> many decP
 
 parseType :: Bool -> String -> Q (Type, [Name])
 parseType simpl = parse simpl typeP
@@ -235,25 +235,41 @@ tyConId prefix = do
 tyVar :: Parser String
 tyVar = varid <?> "type variable"
 
+exprParam :: Parser String
+exprParam = conid <?> "expression parameter"
+
 --------------------------------------------------------------------------------
 -- Declarations ----------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-decP :: Parser Dec
+decP :: Parser [Dec]
 decP = tySyn <|> fnSig
 
-tySyn :: Parser Dec
+
+tySyn :: Parser [Dec]
 tySyn = named "type synonym" $ do
   con     <- (lift . newName) =<< reserved "type" *> conid
   tvs     <- map (PlainTV . mkName) <$> many tyVar
+  evs     <- exprParams
   (ty, _) <- reservedOp "=" *> typeP
-  return $ TySynD con tvs ty
+  return $ declareTySyn con tvs evs ty
 
-fnSig :: Parser Dec
+exprParams :: Parser [String]
+exprParams = do
+  evs <- many ((,) <$> getPosition <*> exprParam)
+  optional (lookAhead tyVar >> fail errTyVarPos)
+  foldM checkUnique [] evs
+  where
+    checkUnique seen (p, param)
+      | param `elem` seen = raiseErrAt p $ errDupExprParam param
+      | otherwise         = return (param:seen)
+
+
+fnSig :: Parser [Dec]
 fnSig = named "signature" $ do
   var       <- mkName <$> varid
   (ty, tvs) <- reservedOp "::" *> typeP
-  return $ SigD var $ quantifyTy tvs ty
+  return $ declareFnSig var $ quantifyTy tvs ty
 
 --------------------------------------------------------------------------------
 -- LiquidHaskell-Annotated Types -----------------------------------------------
@@ -339,6 +355,14 @@ tyConArg = fmap ConT <$> tyCon
 errTyConOp :: String
 errTyConOp =
   "Type constructor operators must be surrounded in (parentheses)"
+
+errTyVarPos :: String
+errTyVarPos =
+  "Type variables cannot appear after expression parameters"
+
+errDupExprParam :: String -> String
+errDupExprParam param =
+  "Duplicate expression parameter \"" ++ param ++ "\""
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------

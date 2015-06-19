@@ -17,6 +17,9 @@ module Language.Haskell.Liquid.RType (
   , Brel(..)
   , Bop(..)
 
+    -- * Expression and Predicate Parameters
+  , ExprParams(..)
+
     -- * FTycon Embeds
   , Embed(..)
   ) where
@@ -70,6 +73,12 @@ data Constant = I Nat
 data Brel = Eq | Ne | Gt | Ge | Lt | Le | Ueq | Une
 
 data Bop  = Plus | Minus | Times | Div | Mod
+
+--------------------------------------------------------------------------------
+-- Expression and Predicate Parameters -----------------------------------------
+--------------------------------------------------------------------------------
+
+data ExprParams = ExprParams [String] deriving (Data, Typeable)
 
 --------------------------------------------------------------------------------
 -- FTycon Embeds ---------------------------------------------------------------

@@ -16,6 +16,11 @@ module Language.Haskell.Liquid.Build (
   , refine
   , mkSpan
 
+    -- * Declarations
+
+  , declareTySyn
+  , declareFnSig
+
     -- * Reft
   , rPred
 
@@ -105,6 +110,24 @@ mkSpan start end = S $ PromotedT 'RT.Span
     startCol  = toNat    $ sourceColumn start
     endLine   = toNat    $ sourceLine   end
     endCol    = toNat    $ sourceColumn end
+
+--------------------------------------------------------------------------------
+-- Declarations ----------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+declareTySyn :: Name -> [TyVarBndr] -> [String] -> Type -> [Dec]
+declareTySyn con tvs evs ty
+  | null evs  = [tySynD]
+  | otherwise = [pragmaD, tySynD]
+  where
+    pragmaD =
+      PragmaD $ AnnP (TypeAnnotation con) $
+        SigE (ConE 'ExprParams `AppE` ListE (map (LitE . StringL) evs)) (ConT ''ExprParams)
+    tySynD =
+      TySynD con tvs ty
+
+declareFnSig :: Name -> Type -> [Dec]
+declareFnSig var ty = [SigD var ty]
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
