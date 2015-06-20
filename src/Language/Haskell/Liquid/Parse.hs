@@ -14,6 +14,7 @@ import           Control.Arrow
 import           Control.Monad
 import           Control.Monad.Trans
 
+import           Data.Char
 import           Data.List
 import           Data.Maybe
 import           Data.Monoid
@@ -46,7 +47,7 @@ import           Language.Haskell.Liquid.Util
 --------------------------------------------------------------------------------
 
 parseDecs :: Bool -> String -> Q [Dec]
-parseDecs simpl = parse simpl $ concat <$> many decP
+parseDecs simpl = parse simpl $ many decP
 
 parseType :: Bool -> String -> Q (Type, [Name])
 parseType simpl = parse simpl typeP
@@ -61,6 +62,7 @@ data ParserState =
   PS { ps_startLoc   :: Loc
      , ps_buildSimpl :: Bool
      , ps_implicitTV :: S.HashSet String
+     , ps_exprParams :: S.HashSet String
      }
 
 
@@ -75,11 +77,26 @@ parse simpl p src = do
       return result
   where
     go loc =
-      runParserT (whiteSpace *> p <* eof) (PS loc simpl mempty) (loc_filename loc) src
+      runParserT (whiteSpace *> p <* eof) (PS loc simpl mempty mempty) (loc_filename loc) src
 
 addImplicitTV :: String -> Parser ()
 addImplicitTV tv =
   modifyState (\ps -> ps { ps_implicitTV = S.insert tv $ ps_implicitTV ps })
+
+drainImplicitTVs :: Parser [Name]
+drainImplicitTVs = do
+  ps <- getState
+  putState $ ps { ps_implicitTV = mempty }
+  return $ map mkName $ S.toList $ ps_implicitTV ps
+
+addExprParams :: [String] -> Parser ()
+addExprParams params =
+  modifyState (\ps -> ps { ps_exprParams = S.union (S.fromList params) $ ps_exprParams ps })
+
+isExprParam :: String -> Parser Bool
+isExprParam param = do
+  params <- ps_exprParams <$> getState
+  return (param `S.member` params)
 
 pickSimpl :: a -> a -> Parser a
 pickSimpl x y = do
@@ -130,6 +147,9 @@ unspacedIdent def = try $ do
      else return name
   where
     reservedSet = S.fromList $ T.reservedNames def
+
+mapMaybeM :: Monad m => (a -> m (Maybe b)) -> [a] -> m [b]
+mapMaybeM f = liftM catMaybes . mapM f
 
 --------------------------------------------------------------------------------
 -- Language Definition ---------------------------------------------------------
@@ -242,34 +262,37 @@ exprParam = conid <?> "expression parameter"
 -- Declarations ----------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-decP :: Parser [Dec]
+decP :: Parser Dec
 decP = tySyn <|> fnSig
 
 
-tySyn :: Parser [Dec]
+tySyn :: Parser Dec
 tySyn = named "type synonym" $ do
   con     <- (lift . newName) =<< reserved "type" *> conid
   tvs     <- map (PlainTV . mkName) <$> many tyVar
   evs     <- exprParams
   (ty, _) <- reservedOp "=" *> typeP
-  return $ declareTySyn con tvs evs ty
+  pickSimpl (TySynD con tvs ty)
+            (TySynD con (tvs ++ evs) ty)
 
-exprParams :: Parser [String]
+exprParams :: Parser [TyVarBndr]
 exprParams = do
   evs <- many ((,) <$> getPosition <*> exprParam)
   optional (lookAhead tyVar >> fail errTyVarPos)
-  foldM checkUnique [] evs
+  -- TODO: Messy code, clean up
+  addExprParams =<< foldM checkUnique [] evs
+  return $ map (exprVar.snd) evs
   where
     checkUnique seen (p, param)
       | param `elem` seen = raiseErrAt p $ errDupExprParam param
       | otherwise         = return (param:seen)
 
 
-fnSig :: Parser [Dec]
+fnSig :: Parser Dec
 fnSig = named "signature" $ do
   var       <- mkName <$> varid
   (ty, tvs) <- reservedOp "::" *> typeP
-  return $ declareFnSig var $ quantifyTy tvs ty
+  return $ SigD var ty
 
 --------------------------------------------------------------------------------
 -- LiquidHaskell-Annotated Types -----------------------------------------------
@@ -277,10 +300,9 @@ fnSig = named "signature" $ do
 
 typeP :: Parser (Type, [Name])
 typeP = do
-  ty <- typeP' False
-  ps <- getState
-  putState $ ps { ps_implicitTV = mempty }
-  return (ty, map mkName $ S.toList $ ps_implicitTV ps)
+  ty  <- typeP' False
+  tvs <- drainImplicitTVs
+  return (ty, tvs)
 
 typeP' :: Bool -> Parser Type
 typeP' inParens = do
@@ -307,32 +329,35 @@ arg :: Parser (Either TyConOp Type)
 arg = do
   a <- many1 arg'
   case a of
-    [t] ->
-      return t
-    Left (TyConOp p _) : _ ->
-      raiseErrAt p errTyConOp
-    Right t : ts -> do
-      ts' <- mapM go ts
+    [Left op] ->
+      return $ Left op
+    as -> do
+      (t:ts) <- mapMaybeM go as
       return $ Right $ case t of
-        AppT t1 t2 -> AppT t1 $ foldl' AppT t2 ts'
-        _          ->           foldl' AppT t  ts'
+        AppT t1 t2 -> AppT t1 $ foldl' AppT t2 ts
+        _          ->           foldl' AppT t  ts
   where
     go (Left (TyConOp p _)) =
       raiseErrAt p errTyConOp
-    go (Right t) =
-      return t
+    go (Right (Left e)) =
+      pickSimpl Nothing $ Just $ exprArg e
+    go (Right (Right t)) =
+      return $ Just t
 
-arg' :: Parser (Either TyConOp Type)
+arg' :: Parser (Either TyConOp (Either Expr Type))
 arg' =
-      (Right <$> refined)
-  <|> (Right <$> parens (typeP' True))
-  <|> (Right <$> tyVarArg)
-  <|> tyConArg
+      (Right <$> braced)
+  <|> ((Right . Right) <$> parens (typeP' True))
+  <|> ((Right . Right) <$> tyVarArg)
+  <|> (fmap Right <$> tyConArg)
 
+
+braced :: Parser (Either Expr Type)
+braced = braces ((Right <$> refined) <|> (Left <$> expr))
 
 refined :: Parser Type
-refined = braces $ do
-  b <- binder <* colon
+refined = do
+  b <- try (binder <* colon)
   a <- arg
   case a of
     Left (TyConOp p _) ->
@@ -341,6 +366,7 @@ refined = braces $ do
       option t $ do
         r <- reservedOp "|" *> reft
         pickSimpl t $ refine t b r
+
 
 tyVarArg :: Parser Type
 tyVarArg = do
@@ -426,7 +452,15 @@ eterm = parens expr
     <|> ite
     <|> (eConNat <$> natural)
     <|> (eBdr <$> binder)
-    <|> (uncurry eCtr <$> located conid)
+    <|> (uncurry econ =<< located conid)
+
+econ :: Span -> String -> Parser Expr
+econ p s = do
+  genExprParam <- isExprParam s
+  return $
+    if genExprParam
+       then eParam s
+       else eCtr p s
 
 ite :: Parser Expr
 ite = eIte <$> (reservedOp "if"   *> pred)

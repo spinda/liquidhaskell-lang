@@ -15,11 +15,8 @@ module Language.Haskell.Liquid.Build (
   , bind
   , refine
   , mkSpan
-
-    -- * Declarations
-
-  , declareTySyn
-  , declareFnSig
+  , exprVar
+  , exprArg
 
     -- * Reft
   , rPred
@@ -36,6 +33,7 @@ module Language.Haskell.Liquid.Build (
   , eConNat
   , eBdr
   , eCtr
+  , eParam
   , eNeg
   , eBin
   , eIte
@@ -111,23 +109,16 @@ mkSpan start end = S $ PromotedT 'RT.Span
     endLine   = toNat    $ sourceLine   end
     endCol    = toNat    $ sourceColumn end
 
---------------------------------------------------------------------------------
--- Declarations ----------------------------------------------------------------
---------------------------------------------------------------------------------
+exprVar :: String -> TyVarBndr
+exprVar param =
+  KindedTV (exprVar' param) (ConT ''RT.Expr)
 
-declareTySyn :: Name -> [TyVarBndr] -> [String] -> Type -> [Dec]
-declareTySyn con tvs evs ty
-  | null evs  = [tySynD]
-  | otherwise = [pragmaD, tySynD]
-  where
-    pragmaD =
-      PragmaD $ AnnP (TypeAnnotation con) $
-        SigE (ConE 'ExprParams `AppE` ListE (map (LitE . StringL) evs)) (ConT ''ExprParams)
-    tySynD =
-      TySynD con tvs ty
+exprVar' :: String -> Name
+exprVar' param =
+  mkName ('ℯ' : param)
 
-declareFnSig :: Name -> Type -> [Dec]
-declareFnSig var ty = [SigD var ty]
+exprArg :: Expr -> Type
+exprArg = unExpr
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
@@ -182,6 +173,9 @@ eBdr = E . (PromotedT 'EBdr `AppT`) . toSymbol
 
 eCtr :: Span -> String -> Expr
 eCtr span = E . (PromotedT 'ECtr `AppT` unSpan span `AppT`) . ConT . mkName
+
+eParam :: String -> Expr
+eParam = E . VarT . exprVar'
 
 eNeg :: Expr -> Expr
 eNeg (E e) = E $ PromotedT 'ENeg `AppT` e

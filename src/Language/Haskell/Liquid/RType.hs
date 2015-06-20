@@ -17,10 +17,8 @@ module Language.Haskell.Liquid.RType (
   , Brel(..)
   , Bop(..)
 
-    -- * Expression and Predicate Parameters
+    -- * Type Declaration Annotations
   , ExprParams(..)
-
-    -- * FTycon Embeds
   , Embed(..)
   ) where
 
@@ -75,14 +73,10 @@ data Brel = Eq | Ne | Gt | Ge | Lt | Le | Ueq | Une
 data Bop  = Plus | Minus | Times | Div | Mod
 
 --------------------------------------------------------------------------------
--- Expression and Predicate Parameters -----------------------------------------
+-- Type Declaration Annotations ------------------------------------------------
 --------------------------------------------------------------------------------
 
 data ExprParams = ExprParams [String] deriving (Data, Typeable)
-
---------------------------------------------------------------------------------
--- FTycon Embeds ---------------------------------------------------------------
---------------------------------------------------------------------------------
 
 data Embed = Embed Name String deriving (Data, Typeable)
 
