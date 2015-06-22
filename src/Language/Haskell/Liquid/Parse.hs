@@ -22,7 +22,7 @@ import           Data.String
 
 import qualified Data.HashSet                     as S
 
-import           Language.Haskell.TH              hiding (Pred)
+import           Language.Haskell.TH              hiding (Pred, appT)
 import           Language.Haskell.TH.Syntax       hiding (Infix, Pred, lift)
 
 import           System.IO
@@ -47,7 +47,7 @@ import           Language.Haskell.Liquid.Util
 --------------------------------------------------------------------------------
 
 parseDecs :: Bool -> String -> Q [Dec]
-parseDecs simpl = parse simpl $ many decP
+parseDecs simpl = parse simpl $ concat <$> many decP
 
 parseType :: Bool -> String -> Q (Type, [Name])
 parseType simpl = parse simpl typeP
@@ -93,8 +93,8 @@ addExprParams :: [String] -> Parser ()
 addExprParams params =
   modifyState (\ps -> ps { ps_exprParams = S.union (S.fromList params) $ ps_exprParams ps })
 
-isExprParam :: String -> Parser Bool
-isExprParam param = do
+isExprArg :: String -> Parser Bool
+isExprArg param = do
   params <- ps_exprParams <$> getState
   return (param `S.member` params)
 
@@ -110,8 +110,11 @@ pickSimpl x y = do
 named :: String -> Parser a -> Parser a
 named s p = p <?> s
 
-located :: Parser a -> Parser (Span, a)
-located p = do
+withPos :: Parser a -> Parser (SourcePos, a)
+withPos p = (,) <$> getPosition <*> p
+
+withSpan :: Parser a -> Parser (Span, a)
+withSpan p = do
   s <- getPosition
   x <- p
   e <- getPosition -- TODO: End position minus whitespace!
@@ -228,163 +231,198 @@ parens = T.parens haskell
 colon :: Parser String
 colon = T.colon haskell
 
+comma :: Parser String
+comma = T.comma haskell
+
 --------------------------------------------------------------------------------
 -- Constructors and Vars -------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data TyConOp = TyConOp SourcePos Name deriving (Show)
+data TyCon = TyCon { tc_op   :: Bool
+                   , tc_name :: Name
+                   }
 
-tyCon :: Parser (Either TyConOp Name)
+
+tyCon :: Parser TyCon
 tyCon = tyCon' "" <?> "type constructor"
 
-tyCon' :: String -> Parser (Either TyConOp Name)
-tyCon' prefix = (Left <$> tyConOp prefix) <|> tyConId prefix
+tyCon' :: String -> Parser TyCon
+tyCon' prefix = tyConOp prefix <|> tyConId prefix
 
-tyConOp :: String -> Parser TyConOp
+tyConOp :: String -> Parser TyCon
 tyConOp prefix = do
   p  <- getPosition
   op <- operator
-  return $ TyConOp p $ mkName $ prefix ++ op
+  return $ TyCon True $ mkName $ prefix ++ op
 
-tyConId :: String -> Parser (Either TyConOp Name)
+tyConId :: String -> Parser TyCon
 tyConId prefix = do
   ident <- unspacedIdent $ haskellDef { T.identStart = upper }
-  (char '.' *> tyCon' (prefix ++ ident ++ ".")) <|> (Right (mkName $ prefix ++ ident) <$ whiteSpace)
+  (char '.' *> tyCon' (prefix ++ ident ++ ".")) <|> (TyCon False (mkName $ prefix ++ ident) <$ whiteSpace)
 
 
 tyVar :: Parser String
 tyVar = varid <?> "type variable"
 
 exprParam :: Parser String
-exprParam = conid <?> "expression parameter"
+exprParam = varid <?> "expression parameter"
 
 --------------------------------------------------------------------------------
 -- Declarations ----------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-decP :: Parser Dec
+decP :: Parser [Dec]
 decP = tySyn <|> fnSig
 
 
-tySyn :: Parser Dec
+tySyn :: Parser [Dec]
 tySyn = named "type synonym" $ do
   con     <- (lift . newName) =<< reserved "type" *> conid
-  tvs     <- map (PlainTV . mkName) <$> many tyVar
   evs     <- exprParams
+  tvs     <- map (PlainTV . mkName) <$> many (tyVar <|> (lookAhead exprParams *> fail errExprParamsPos))
   (ty, _) <- reservedOp "=" *> typeP
-  pickSimpl (TySynD con tvs ty)
-            (TySynD con (tvs ++ evs) ty)
+  let tySynD = TySynD con tvs ty
+  if null evs
+     then return [tySynD]
+     else pickSimpl [tySynD] [tySynD, annExprParams con evs]
 
-exprParams :: Parser [TyVarBndr]
+exprParams :: Parser [String]
 exprParams = do
-  evs <- many ((,) <$> getPosition <*> exprParam)
-  optional (lookAhead tyVar >> fail errTyVarPos)
-  -- TODO: Messy code, clean up
-  addExprParams =<< foldM checkUnique [] evs
-  return $ map (exprVar.snd) evs
+  evs <- braces (many1 ((,) <$> getPosition <*> exprParam)) <|> return []
+  foldM checkUnique [] evs
   where
     checkUnique seen (p, param)
       | param `elem` seen = raiseErrAt p $ errDupExprParam param
       | otherwise         = return (param:seen)
 
 
-fnSig :: Parser Dec
+fnSig :: Parser [Dec]
 fnSig = named "signature" $ do
   var       <- mkName <$> varid
   (ty, tvs) <- reservedOp "::" *> typeP
-  return $ SigD var ty
+  return [SigD var ty]
 
 --------------------------------------------------------------------------------
 -- LiquidHaskell-Annotated Types -----------------------------------------------
 --------------------------------------------------------------------------------
 
+data Func = Func (Maybe (Span, String)) [(SourcePos, Term)] (Maybe Func)
+
+data Term = OpTerm Name
+          | TcTerm Name
+          | TvTerm Name
+          | ExTerm Span [Expr]
+          | GrTerm Func
+          | ReTerm String Func Reft
+
+
+typeFromFunc :: Func -> Parser Type
+typeFromFunc (Func b ts f) = do
+  ty  <- typeFromTerms ts
+  ty' <- case b of
+    Nothing     -> return ty
+    Just (p, x) -> pickSimpl ty $ bind p x ty
+  case f of
+    Nothing -> return ty'
+    Just f' -> (funT ty') <$> typeFromFunc f'
+
+
+typeFromTerms :: [(SourcePos, Term)] -> Parser Type
+
+typeFromTerms ((p, OpTerm _) : _) =
+  raiseErrAt p errTyConOp
+
+typeFromTerms ((_, TcTerm name) : (_, ExTerm span es) : terms) = do
+  terms' <- mapM typeFromTerm terms
+  let app = appT (ConT name) terms'
+  pickSimpl app $ exprArgs app span es
+
+typeFromTerms ((_, TcTerm name) : terms) = do
+  appT (ConT name) <$> mapM typeFromTerm terms
+
+typeFromTerms ((_, TvTerm name) : terms) = do
+  terms' <- mapM typeFromTerm terms
+  appT (VarT name) <$> mapM typeFromTerm terms
+
+typeFromTerms ((p, ExTerm _ _) : _) =
+  raiseErrAt p errExprArgsPos
+
+typeFromTerms ((_, GrTerm (Func b [(p, OpTerm name)] f)) : terms) = do
+  t <- typeFromFunc $ Func b [(p, TcTerm name)] f
+  appT t <$> mapM typeFromTerm terms
+
+typeFromTerms ((_, GrTerm f) : terms) = do
+  t <- typeFromFunc f
+  appT t <$> mapM typeFromTerm terms
+
+typeFromTerms ((_, ReTerm b f r) : terms) = do
+  t      <- typeFromFunc f
+  terms' <- mapM typeFromTerm terms
+  pickSimpl t $ refine t b r
+
+
+typeFromTerm :: (SourcePos, Term) -> Parser Type
+typeFromTerm t = typeFromTerms [t]
+
+
 typeP :: Parser (Type, [Name])
 typeP = do
-  ty  <- typeP' False
+  ty  <- typeP'
   tvs <- drainImplicitTVs
   return (ty, tvs)
 
-typeP' :: Bool -> Parser Type
-typeP' inParens = do
-  bp <- getPosition
-  bm <- optionMaybe $ try (located binder <* colon)
-  t1 <- arg
-  t2 <- optionMaybe $ reservedOp "->" *> typeP' False
-  case (bm, t1, t2) of
-    (_, Left (TyConOp p _), _) | not inParens || isJust t2 ->
-      raiseErrAt p errTyConOp
-    (Nothing, Left (TyConOp _ n), Nothing) ->
-      return $ ConT n
-    (Nothing, Right i, Nothing) ->
-      return i
-    (Nothing, Right i, Just o) ->
-      return $ funT i o
-    (Just (span, b), Right i, Nothing) ->
-      pickSimpl i $ bind span b i
-    (Just (span, b), Right i, Just o) ->
-      pickSimpl (funT i o) $ funT (bind span b i) o
+typeP' :: Parser Type
+typeP' = typeFromFunc =<< funcP
+
+funcP :: Parser Func
+funcP = do
+  b <- optionMaybe $ try (withSpan binder <* colon)
+  t <- many1 (withPos termP)
+  f <- optionMaybe $ reservedOp "->" *> funcP
+  return $ Func b t f
 
 
-arg :: Parser (Either TyConOp Type)
-arg = do
-  a <- many1 arg'
-  case a of
-    [Left op] ->
-      return $ Left op
-    as -> do
-      (t:ts) <- mapMaybeM go as
-      return $ Right $ case t of
-        AppT t1 t2 -> AppT t1 $ foldl' AppT t2 ts
-        _          ->           foldl' AppT t  ts
-  where
-    go (Left (TyConOp p _)) =
-      raiseErrAt p errTyConOp
-    go (Right (Left e)) =
-      pickSimpl Nothing $ Just $ exprArg e
-    go (Right (Right t)) =
-      return $ Just t
+termP :: Parser Term
+termP = (GrTerm <$> parens funcP)
+    <|> braces (refinedP <|> exprArgsP)
+    <|> tyconTermP
+    <|> tvTermP
 
-arg' :: Parser (Either TyConOp (Either Expr Type))
-arg' =
-      (Right <$> braced)
-  <|> ((Right . Right) <$> parens (typeP' True))
-  <|> ((Right . Right) <$> tyVarArg)
-  <|> (fmap Right <$> tyConArg)
-
-
-braced :: Parser (Either Expr Type)
-braced = braces ((Right <$> refined) <|> (Left <$> expr))
-
-refined :: Parser Type
-refined = do
+refinedP :: Parser Term
+refinedP = do
   b <- try (binder <* colon)
-  a <- arg
-  case a of
-    Left (TyConOp p _) ->
-      raiseErrAt p errTyConOp
-    Right t ->
-      option t $ do
-        r <- reservedOp "|" *> reft
-        pickSimpl t $ refine t b r
+  f <- funcP
+  r <- reservedOp "|" *> reft
+  return $ ReTerm b f r
 
+exprArgsP :: Parser Term
+exprArgsP = uncurry ExTerm <$> withSpan (sepBy1 expr comma)
 
-tyVarArg :: Parser Type
-tyVarArg = do
+tyconTermP :: Parser Term
+tyconTermP = do
+  tc <- tyCon
+  return $ if tc_op tc
+    then OpTerm $ tc_name tc
+    else TcTerm $ tc_name tc
+
+tvTermP :: Parser Term
+tvTermP = do
   tv <- tyVar
   addImplicitTV tv
-  return $ VarT $ mkName tv
-
-tyConArg :: Parser (Either TyConOp Type)
-tyConArg = fmap ConT <$> tyCon
+  return $ TvTerm $ mkName tv
 
 
 errTyConOp :: String
 errTyConOp =
   "Type constructor operators must be surrounded in (parentheses)"
 
-errTyVarPos :: String
-errTyVarPos =
-  "Type variables cannot appear after expression parameters"
+errExprArgsPos :: String
+errExprArgsPos =
+  "Expression argument list can only appear immediately after a type constructor"
+
+errExprParamsPos :: String
+errExprParamsPos =
+  "Expression parameters list must appear only once, before any type variables"
 
 errDupExprParam :: String -> String
 errDupExprParam param =
@@ -451,16 +489,17 @@ eterm = parens expr
     <|> (eBot <$ reservedOp "_|_")
     <|> ite
     <|> (eConNat <$> natural)
-    <|> (eBdr <$> binder)
-    <|> (uncurry econ =<< located conid)
+    <|> evar
+    <|> (uncurry eCtr <$> withSpan conid)
 
-econ :: Span -> String -> Parser Expr
-econ p s = do
-  genExprParam <- isExprParam s
+evar :: Parser Expr
+evar = do
+  v <- binder <?> "binder or expression argument"
+  genExprArg <- isExprArg v
   return $
-    if genExprParam
-       then eParam s
-       else eCtr p s
+    if genExprArg
+       then eArg v
+       else eBdr v
 
 ite :: Parser Expr
 ite = eIte <$> (reservedOp "if"   *> pred)

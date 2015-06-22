@@ -8,6 +8,7 @@ module Language.Haskell.Liquid.RType (
     -- * Embedded Type Annotations
     Bind
   , Refine
+  , ExprArgs
   , Span(..)
 
     -- * Embedded Refinement AST
@@ -38,6 +39,8 @@ import Language.Haskell.TH.Syntax (Name)
 type Bind (s :: Span) (b :: Symbol) a = a
 type Refine a (b :: Symbol) (p :: Pred) = a
 
+type ExprArgs a (s :: Span) (es :: [Expr]) = a
+
 data Span = Span Symbol Nat Nat Nat Nat
 
 --------------------------------------------------------------------------------
@@ -59,6 +62,7 @@ data Pred :: * where
 data Expr :: * where
   ECon :: Constant -> Expr
   EBdr :: Symbol -> Expr
+  EArg :: Symbol -> Expr
   ECtr :: forall a. Span -> a -> Expr
   ENeg :: Expr -> Expr
   EBin :: Bop  -> Expr -> Expr -> Expr

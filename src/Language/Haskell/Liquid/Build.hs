@@ -10,13 +10,16 @@ module Language.Haskell.Liquid.Build (
 
     -- * Type AST Utility Functions
   , funT
+  , appT
 
     -- * Type-Level Annotations 
   , bind
   , refine
+  , exprArgs
   , mkSpan
-  , exprVar
-  , exprArg
+
+    -- * Type Declaration Annotations
+  , annExprParams
 
     -- * Reft
   , rPred
@@ -32,13 +35,15 @@ module Language.Haskell.Liquid.Build (
     -- * Expr
   , eConNat
   , eBdr
+  , eArg
   , eCtr
-  , eParam
   , eNeg
   , eBin
   , eIte
   , eBot
   ) where
+
+import Data.List
 
 import Text.Parsec.Pos
 
@@ -79,6 +84,16 @@ unExpr (E e) = e
 funT :: Type -> Type -> Type
 funT t = (ArrowT `AppT` t `AppT`)
 
+appT :: Type -> [Type] -> Type
+appT t = foldl' AppT t
+
+listT :: [Type] -> Type
+listT = foldr consT PromotedNilT
+
+consT :: Type -> Type -> Type
+consT x y = PromotedConsT `AppT` x `AppT` y
+
+
 toSymbol :: String -> Type
 toSymbol = LitT . StrTyLit
 
@@ -95,6 +110,11 @@ bind span x a = ConT ''Bind `AppT` unSpan span `AppT` toSymbol x `AppT` a
 refine :: Type -> String -> Reft -> Type
 refine a b r = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
 
+
+exprArgs :: Type -> Span -> [Expr] -> Type
+exprArgs a span es = ConT ''ExprArgs `AppT` a `AppT` unSpan span `AppT` listT (map unExpr es)
+
+
 mkSpan :: SourcePos -> SourcePos -> Span
 mkSpan start end = S $ PromotedT 'RT.Span
   `AppT` filename
@@ -109,16 +129,15 @@ mkSpan start end = S $ PromotedT 'RT.Span
     endLine   = toNat    $ sourceLine   end
     endCol    = toNat    $ sourceColumn end
 
-exprVar :: String -> TyVarBndr
-exprVar param =
-  KindedTV (exprVar' param) (ConT ''RT.Expr)
+--------------------------------------------------------------------------------
+-- Type Declaration Annotations ------------------------------------------------
+--------------------------------------------------------------------------------
 
-exprVar' :: String -> Name
-exprVar' param =
-  mkName ('ℯ' : param)
-
-exprArg :: Expr -> Type
-exprArg = unExpr
+annExprParams :: Name -> [String] -> Dec
+annExprParams con evs =
+  PragmaD $ AnnP (TypeAnnotation con) (SigE expr (ConT ''ExprParams))
+  where
+    expr = ConE 'ExprParams `AppE` ListE (map (LitE . StringL) evs)
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
@@ -171,11 +190,11 @@ eConNat = E . (PromotedT 'ECon `AppT`) . cNat
 eBdr :: String -> Expr
 eBdr = E . (PromotedT 'EBdr `AppT`) . toSymbol
 
+eArg :: String -> Expr
+eArg = E . (PromotedT 'EArg `AppT`) . toSymbol
+
 eCtr :: Span -> String -> Expr
 eCtr span = E . (PromotedT 'ECtr `AppT` unSpan span `AppT`) . ConT . mkName
-
-eParam :: String -> Expr
-eParam = E . VarT . exprVar'
 
 eNeg :: Expr -> Expr
 eNeg (E e) = E $ PromotedT 'ENeg `AppT` e
