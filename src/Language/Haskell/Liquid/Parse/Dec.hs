@@ -46,7 +46,7 @@ embedP = do
 inlineP :: Parser [Dec]
 inlineP = do
   simplified <- getSimplified
-  var        <- mkName <$> varidP
+  var        <- reserved "inline" *> (mkName <$> varidP)
   sig        <- option [] $ fnSigP' var
   return $ if simplified
     then sig

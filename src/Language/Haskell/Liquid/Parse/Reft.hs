@@ -73,7 +73,7 @@ etermP = parens exprP
     <|> (eBot <$ reservedOp "_|_")
     <|> eIteP
     <|> (eConNat <$> natural)
-    <|> (eBdr <$> binderP)
+    <|> (eVar <$> binderP)
     <|> eCtrP
 
 eIteP :: Parser Expr
@@ -83,11 +83,11 @@ eIteP = eIte <$> (reservedOp "if"   *> predP)
 
 eCtrP :: Parser Expr
 eCtrP = do
-  v <- conidP <?> "data constructor or expression parameter"
-  genExprParam <- isExprParam v
+  (s, x) <- (withSpan conidP) <?> "data constructor or expression parameter"
+  genExprParam <- isExprParam x
   return $ if genExprParam
-    then eParam v
-    else eBdr v
+    then eParam x
+    else eCtr s x
 
 eops = [ [ Prefix (eNeg <$ reservedOp "-")
          ]

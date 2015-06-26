@@ -38,7 +38,7 @@ module Language.Haskell.Liquid.Build (
 
     -- * Expr
   , eConNat
-  , eBdr
+  , eVar
   , eParam
   , eCtr
   , eNeg
@@ -211,8 +211,8 @@ pTop = P $ PromotedT 'PTop
 eConNat :: Integer -> Expr
 eConNat = E . (PromotedT 'ECon `AppT`) . cNat
 
-eBdr :: String -> Expr
-eBdr = E . (PromotedT 'EBdr `AppT`) . toSymbol
+eVar :: String -> Expr
+eVar = E . (PromotedT 'EVar `AppT`) . toSymbol
 
 eParam :: String -> Expr
 eParam = E . (PromotedT 'EParam `AppT`) . toSymbol

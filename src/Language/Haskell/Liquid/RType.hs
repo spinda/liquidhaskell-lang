@@ -63,7 +63,7 @@ data Pred :: * where
 
 data Expr :: * where
   ECon   :: Constant -> Expr
-  EBdr   :: Symbol -> Expr
+  EVar   :: Symbol -> Expr
   EParam :: Symbol -> Expr
   ECtr   :: forall a. Span -> a -> Expr
   ENeg   :: Expr -> Expr
