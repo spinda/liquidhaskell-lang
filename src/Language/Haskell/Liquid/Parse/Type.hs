@@ -21,7 +21,7 @@ import Language.Haskell.Liquid.Parse.Reft
 -- Top-Level Entry Point -------------------------------------------------------
 --------------------------------------------------------------------------------
 
-typeP :: Parser (Type, [Name])
+typeP :: Parser ([Name], Type)
 typeP = parseType =<< lexType
 
 --------------------------------------------------------------------------------
@@ -116,13 +116,13 @@ data Arg = TyArg Type
          | FnArg
 
 
-parseType :: [(SourcePos, Term)] -> Parser (Type, [Name])
+parseType :: [(SourcePos, Term)] -> Parser ([Name], Type)
 parseType terms = do
   simplified <- getSimplified
   either (uncurry raiseErrAt) finalize $
     runStateT (parseType' terms) (PS simplified mempty)
   where
-    finalize (ty, PS _ tvs) = return (ty, map mkName $ S.toList tvs)
+    finalize (ty, PS _ tvs) = return (map mkName $ S.toList tvs, ty)
 
 parseType' :: [(SourcePos, Term)] -> TypeParser Type
 parseType' terms = do

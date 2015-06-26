@@ -32,7 +32,7 @@ lqDec = parseDecs
 
 lqType :: Bool -> String -> Q Type
 lqType simplified s = do
-  (ty, tvs) <- parseType simplified s
+  (tvs, ty) <- parseType simplified s
   newTVs    <- filterM (fmap isNothing . lookupTypeName . nameBase) tvs
   return $ quantifyTy newTVs ty
 

@@ -22,6 +22,7 @@ module Language.Haskell.Liquid.RType (
   , ExprParams(..)
   , EmbedAs(..)
   , FTycon(..)
+  , IsInline(..)
   ) where
 
 -- TODO: Rename this module
@@ -86,4 +87,6 @@ data ExprParams = ExprParams [String] deriving (Data, Typeable)
 data EmbedAs = EmbedAs FTycon deriving (Data, Typeable)
 
 data FTycon = FTcInt | FTcReal | FTcBool | FTcUser String deriving (Data, Typeable)
+
+data IsInline = IsInline deriving (Data, Typeable)
 

@@ -23,7 +23,7 @@ import Language.Haskell.Liquid.Parse.Type
 --------------------------------------------------------------------------------
 
 decP :: Parser [Dec]
-decP = embedP <|> tySynP <|> fnSigP
+decP = embedP <|> inlineP <|> tySynP <|> fnSigP
 
 --------------------------------------------------------------------------------
 -- FTycon Embed Annotations ----------------------------------------------------
@@ -40,6 +40,19 @@ embedP = do
     else [annEmbedAs tc' fc]
 
 --------------------------------------------------------------------------------
+-- Inline Annotations ----------------------------------------------------------
+--------------------------------------------------------------------------------
+
+inlineP :: Parser [Dec]
+inlineP = do
+  simplified <- getSimplified
+  var        <- mkName <$> varidP
+  sig        <- option [] $ fnSigP' var
+  return $ if simplified
+    then sig
+    else [annIsInline var] ++ sig
+
+--------------------------------------------------------------------------------
 -- Type Synonym Declarations ---------------------------------------------------
 --------------------------------------------------------------------------------
 
@@ -49,7 +62,7 @@ tySynP = named "type synonym" $ do
   con        <- (lift . newName) =<< reserved "type" *> conidP
   tvs        <- map (PlainTV . mkName) <$> many tyVarP
   evs        <- exprParamsP
-  (ty, _)    <- reservedOp "=" *> typeP
+  (_, ty)    <- reservedOp "=" *> typeP
   let tySynD = TySynD con tvs ty
   return $ if null evs || simplified
     then [tySynD]
@@ -72,10 +85,11 @@ exprParamsP = do
 --------------------------------------------------------------------------------
 
 fnSigP :: Parser [Dec]
-fnSigP = named "signature" $ do
-  var       <- mkName <$> varidP
-  (ty, tvs) <- reservedOp "::" *> typeP
-  return [SigD var $ quantifyTy tvs ty]
+fnSigP = named "signature" $ fnSigP' =<< (mkName <$> varidP)
+
+fnSigP' :: Name -> Parser [Dec]
+fnSigP' var = named "signature" $
+  reservedOp "::" *> fmap (return . SigD var . uncurry quantifyTy) typeP
 
 --------------------------------------------------------------------------------
 -- Error Messages --------------------------------------------------------------

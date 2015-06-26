@@ -23,6 +23,7 @@ module Language.Haskell.Liquid.Build (
     -- * Type Declaration Annotations
   , annExprParams
   , annEmbedAs
+  , annIsInline
 
     -- * Reft
   , rPred
@@ -157,6 +158,10 @@ annEmbedAs tc fc =
     ofFTycon FTcReal     = ConE 'FTcReal
     ofFTycon FTcBool     = ConE 'FTcBool
     ofFTycon (FTcUser s) = ConE 'FTcUser `AppE` LitE (StringL s)
+
+annIsInline :: Name -> Dec
+annIsInline var =
+  PragmaD $ AnnP (ValueAnnotation var) (SigE (ConE 'IsInline) (ConT ''IsInline))
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------

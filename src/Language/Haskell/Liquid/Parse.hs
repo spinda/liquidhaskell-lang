@@ -18,6 +18,6 @@ import Language.Haskell.Liquid.Parse.Type
 parseDecs :: Bool -> String -> Q [Dec]
 parseDecs simplified = runParser simplified $ concat <$> many decP
 
-parseType :: Bool -> String -> Q (Type, [Name])
+parseType :: Bool -> String -> Q ([Name], Type)
 parseType simplified = runParser simplified typeP
 
