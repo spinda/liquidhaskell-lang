@@ -26,6 +26,7 @@ module Language.Haskell.Liquid.Parse.Base (
   , varidP, conidP, binderP
   , tyConP, TyCon(..)
   , tyVarP, exprParamP
+  , fTyConP
   ) where
 
 import Control.Monad.Trans
@@ -43,6 +44,7 @@ import Text.Parsec.Token (GenLanguageDef(..))
 import qualified Text.Parsec.Token as T
 
 import Language.Haskell.Liquid.Build
+import Language.Haskell.Liquid.RType (FTycon(..))
 
 --------------------------------------------------------------------------------
 -- Parser Type -----------------------------------------------------------------
@@ -260,4 +262,14 @@ tyVarP = varidP <?> "type variable"
 
 exprParamP :: Parser String
 exprParamP = conidP <?> "expression parameter"
+
+
+fTyConP :: Parser FTycon
+fTyConP = (FTcInt  <$ reserved "int")
+      <|> (FTcInt  <$ reserved "Integer")
+      <|> (FTcInt  <$ reserved "Int")
+      <|> (FTcInt  <$ reserved "int")
+      <|> (FTcReal <$ reserved "real")
+      <|> (FTcBool <$ reserved "bool")
+      <|> (FTcUser <$> conidP)
 

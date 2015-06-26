@@ -20,7 +20,8 @@ module Language.Haskell.Liquid.RType (
 
     -- * Type Declaration Annotations
   , ExprParams(..)
-  , Embed(..)
+  , EmbedAs(..)
+  , FTycon(..)
   ) where
 
 -- TODO: Rename this module
@@ -82,5 +83,7 @@ data Bop  = Plus | Minus | Times | Div | Mod
 
 data ExprParams = ExprParams [String] deriving (Data, Typeable)
 
-data Embed = Embed Name String deriving (Data, Typeable)
+data EmbedAs = EmbedAs FTycon deriving (Data, Typeable)
+
+data FTycon = FTcInt | FTcReal | FTcBool | FTcUser String deriving (Data, Typeable)
 

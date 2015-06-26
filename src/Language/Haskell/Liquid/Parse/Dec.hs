@@ -21,7 +21,20 @@ import Language.Haskell.Liquid.Parse.Type
 --------------------------------------------------------------------------------
 
 decP :: Parser [Dec]
-decP = tySynP <|> fnSigP
+decP = embedP <|> tySynP <|> fnSigP
+
+--------------------------------------------------------------------------------
+-- FTycon Embed Annotations ----------------------------------------------------
+--------------------------------------------------------------------------------
+
+embedP :: Parser [Dec]
+embedP = do
+  simplified <- getSimplified
+  tc         <- reserved "embed" *> parens tyConP <|> tyConP
+  fc         <- reserved "as"    *> fTyConP
+  return $ if simplified
+    then []
+    else [annEmbedAs (mkName $ tc_id tc) fc]
 
 --------------------------------------------------------------------------------
 -- Type Synonym Declarations ---------------------------------------------------

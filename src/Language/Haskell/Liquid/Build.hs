@@ -22,6 +22,7 @@ module Language.Haskell.Liquid.Build (
 
     -- * Type Declaration Annotations
   , annExprParams
+  , annEmbedAs
 
     -- * Reft
   , rPred
@@ -52,6 +53,7 @@ import Data.List
 import Text.Parsec.Pos
 
 import Language.Haskell.TH.Syntax hiding (Pred)
+import Language.Haskell.TH.Quote
 
 import Language.Haskell.Liquid.RType hiding (Expr, Pred, Span)
 import qualified Language.Haskell.Liquid.RType as RT
@@ -145,6 +147,16 @@ annExprParams con evs =
   PragmaD $ AnnP (TypeAnnotation con) (SigE expr (ConT ''ExprParams))
   where
     expr = ConE 'ExprParams `AppE` ListE (map (LitE . StringL) evs)
+
+annEmbedAs :: Name -> FTycon -> Dec
+annEmbedAs tc fc =
+  PragmaD $ AnnP (TypeAnnotation tc) (SigE expr (ConT ''EmbedAs))
+  where
+    expr                 = ConE 'EmbedAs `AppE` ofFTycon fc
+    ofFTycon FTcInt      = ConE 'FTcInt
+    ofFTycon FTcReal     = ConE 'FTcReal
+    ofFTycon FTcBool     = ConE 'FTcBool
+    ofFTycon (FTcUser s) = ConE 'FTcUser `AppE` LitE (StringL s)
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
