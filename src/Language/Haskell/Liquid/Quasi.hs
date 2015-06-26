@@ -14,10 +14,10 @@ import           Language.Haskell.Liquid.RType
 import           Language.Haskell.Liquid.Util
 
 lq :: Bool -> QuasiQuoter
-lq simpl =
+lq simplified =
   QuasiQuoter
-    { quoteType = lqType simpl
-    , quoteDec  = lqDec  simpl
+    { quoteType = lqType simplified
+    , quoteDec  = lqDec  simplified
     , quoteExp  = lqInvalid "expression"
     , quotePat  = lqInvalid "pattern"
     }
@@ -31,8 +31,8 @@ lqDec :: Bool -> String -> Q [Dec]
 lqDec = parseDecs
 
 lqType :: Bool -> String -> Q Type
-lqType simpl s = do
-  (ty, tvs) <- parseType simpl s
+lqType simplified s = do
+  (ty, tvs) <- parseType simplified s
   newTVs    <- filterM (fmap isNothing . lookupTypeName . nameBase) tvs
   return $ quantifyTy newTVs ty
 

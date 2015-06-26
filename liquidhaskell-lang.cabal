@@ -11,6 +11,10 @@ library
                        Language.Haskell.Liquid.RType
   other-modules:       Language.Haskell.Liquid.Build,
                        Language.Haskell.Liquid.Parse,
+                       Language.Haskell.Liquid.Parse.Base,
+                       Language.Haskell.Liquid.Parse.Dec,
+                       Language.Haskell.Liquid.Parse.Reft,
+                       Language.Haskell.Liquid.Parse.Type,
                        Language.Haskell.Liquid.Quasi,
                        Language.Haskell.Liquid.Util
   build-depends:       base, 

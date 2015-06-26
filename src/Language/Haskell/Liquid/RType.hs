@@ -39,7 +39,7 @@ import Language.Haskell.TH.Syntax (Name)
 type Bind (s :: Span) (b :: Symbol) a = a
 type Refine a (b :: Symbol) (p :: Pred) = a
 
-type ExprArgs a (s :: Span) (es :: [Expr]) = a
+type ExprArgs a (es :: [(Span, Expr)]) = a
 
 data Span = Span Symbol Nat Nat Nat Nat
 
@@ -60,14 +60,14 @@ data Pred :: * where
   PTop   :: Pred
 
 data Expr :: * where
-  ECon :: Constant -> Expr
-  EBdr :: Symbol -> Expr
-  EArg :: Symbol -> Expr
-  ECtr :: forall a. Span -> a -> Expr
-  ENeg :: Expr -> Expr
-  EBin :: Bop  -> Expr -> Expr -> Expr
-  EIte :: Pred -> Expr -> Expr -> Expr
-  EBot :: Expr
+  ECon   :: Constant -> Expr
+  EBdr   :: Symbol -> Expr
+  EParam :: Symbol -> Expr
+  ECtr   :: forall a. Span -> a -> Expr
+  ENeg   :: Expr -> Expr
+  EBin   :: Bop  -> Expr -> Expr -> Expr
+  EIte   :: Pred -> Expr -> Expr -> Expr
+  EBot   :: Expr
 
 
 data Constant = I Nat

@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+-- TODO: Rename to `Language.Haskell.Liquid.Parse.Build`?
+
 module Language.Haskell.Liquid.Build (
     -- * AST Newtypes
     Span
@@ -35,13 +37,15 @@ module Language.Haskell.Liquid.Build (
     -- * Expr
   , eConNat
   , eBdr
-  , eArg
+  , eParam
   , eCtr
   , eNeg
   , eBin
   , eIte
   , eBot
   ) where
+
+import Control.Arrow
 
 import Data.List
 
@@ -90,6 +94,9 @@ appT t = foldl' AppT t
 listT :: [Type] -> Type
 listT = foldr consT PromotedNilT
 
+tupT :: (Type, Type) -> Type
+tupT (x, y) = PromotedTupleT 2 `AppT` x `AppT` y
+
 consT :: Type -> Type -> Type
 consT x y = PromotedConsT `AppT` x `AppT` y
 
@@ -107,12 +114,12 @@ toNat = LitT . NumTyLit . fromIntegral
 bind :: Span -> String -> Type -> Type
 bind span x a = ConT ''Bind `AppT` unSpan span `AppT` toSymbol x `AppT` a
 
-refine :: Type -> String -> Reft -> Type
-refine a b r = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
+refine :: String -> Reft -> Type -> Type
+refine b r a = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
 
 
-exprArgs :: Type -> Span -> [Expr] -> Type
-exprArgs a span es = ConT ''ExprArgs `AppT` a `AppT` unSpan span `AppT` listT (map unExpr es)
+exprArgs :: [(Span, Expr)] -> Type -> Type
+exprArgs es a = ConT ''ExprArgs `AppT` a `AppT` listT (map (tupT . (unSpan *** unExpr)) es)
 
 
 mkSpan :: SourcePos -> SourcePos -> Span
@@ -190,8 +197,8 @@ eConNat = E . (PromotedT 'ECon `AppT`) . cNat
 eBdr :: String -> Expr
 eBdr = E . (PromotedT 'EBdr `AppT`) . toSymbol
 
-eArg :: String -> Expr
-eArg = E . (PromotedT 'EArg `AppT`) . toSymbol
+eParam :: String -> Expr
+eParam = E . (PromotedT 'EParam `AppT`) . toSymbol
 
 eCtr :: Span -> String -> Expr
 eCtr span = E . (PromotedT 'ECtr `AppT` unSpan span `AppT`) . ConT . mkName
