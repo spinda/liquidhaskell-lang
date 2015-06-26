@@ -5,6 +5,8 @@ module Language.Haskell.Liquid.Parse.Dec (
 import Control.Monad
 import Control.Monad.Trans
 
+import Data.Maybe
+
 import Language.Haskell.TH.Syntax hiding (lift)
 
 import Text.Parsec
@@ -30,11 +32,12 @@ decP = embedP <|> tySynP <|> fnSigP
 embedP :: Parser [Dec]
 embedP = do
   simplified <- getSimplified
-  tc         <- reserved "embed" *> parens tyConP <|> tyConP
+  tc         <- reserved "embed" *> (parens tyConP <|> tyConP)
   fc         <- reserved "as"    *> fTyConP
+  tc'        <- lift $ fromMaybe (mkName $ tc_id tc) <$> lookupTypeName (tc_id tc)
   return $ if simplified
     then []
-    else [annEmbedAs (mkName $ tc_id tc) fc]
+    else [annEmbedAs tc' fc]
 
 --------------------------------------------------------------------------------
 -- Type Synonym Declarations ---------------------------------------------------
