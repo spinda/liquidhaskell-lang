@@ -60,10 +60,8 @@ runParser simplified p src = do
   loc    <- location
   result <- go loc
   case result of
-    Left err ->
-      fail $ formatErr loc err
-    Right result ->
-      return result
+    Left  err    -> failWithError loc err
+    Right result -> return result
   where
     go loc =
       runParserT (whiteSpace *> p <* eof) (PS loc simplified mempty) (loc_filename loc) src
@@ -85,9 +83,16 @@ isExprParam param = do
 -- Error Messages --------------------------------------------------------------
 --------------------------------------------------------------------------------
 
--- TODO: Show code in error messages
-formatErr :: Loc -> ParseError -> String
-formatErr loc err = show $ shiftErrPos loc err
+failWithError :: Loc -> ParseError -> Q a
+failWithError loc err = (fail =<<) $ runIO $ do
+  src <- readFile $ loc_filename loc
+  let line   = lines src !! (sourceLine pos - 1)
+  let (x:xs) = lines (show err') ++ [line, caret]
+  return $ unlines (x : map ("     " ++) xs)
+  where
+    err'  = shiftErrPos loc err
+    pos   = errorPos err'
+    caret = replicate (sourceColumn pos - 1) ' ' ++ "^"
 
 shiftErrPos :: Loc -> ParseError -> ParseError
 shiftErrPos loc err = setErrorPos errPos' err
@@ -110,7 +115,7 @@ shiftErrPos loc err = setErrorPos errPos' err
 raiseErrAt :: SourcePos -> String -> Parser a
 raiseErrAt pos err = do
   loc <- ps_startLoc <$> getState
-  lift $ fail $ formatErr loc $ newErrorMessage (Message err) pos
+  lift $ failWithError loc $ newErrorMessage (Message err) pos
 
 --------------------------------------------------------------------------------
 -- Parsing Utility Functions ---------------------------------------------------
