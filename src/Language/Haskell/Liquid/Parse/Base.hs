@@ -3,6 +3,7 @@ module Language.Haskell.Liquid.Parse.Base (
     Parser
   , runParser
   , getSimplified
+  , ifSimplified
   , addExprParams
   , isExprParam
 
@@ -11,8 +12,8 @@ module Language.Haskell.Liquid.Parse.Base (
 
     -- * Parsing Utility Functions
   , named
+  , located
   , withPos
-  , withSpan
   , unspacedIdent
 
     -- * Language Definition
@@ -72,6 +73,13 @@ getSimplified :: Parser Bool
 getSimplified = ps_simplified <$> getState
 {-# INLINE getSimplified #-}
 
+ifSimplified :: a -> a -> Parser a
+ifSimplified x y = do
+  simplified <- getSimplified
+  return $ if simplified
+    then x
+    else y
+
 addExprParams :: [String] -> Parser ()
 addExprParams params = do
   modifyState (\ps -> ps { ps_exprParams = S.union (S.fromList params) $ ps_exprParams ps })
@@ -127,15 +135,15 @@ named :: String -> Parser a -> Parser a
 named s p = p <?> s
 
 
+located :: Parser a -> Parser (Located a)
+located p = do
+  s <- getPosition
+  a <- p
+  e <- getPosition -- TODO: End position minus whitespace!
+  return $ mkLocated s e a
+
 withPos :: Parser a -> Parser (SourcePos, a)
 withPos p = (,) <$> getPosition <*> p
-
-withSpan :: Parser a -> Parser (Span, a)
-withSpan p = do
-  s <- getPosition
-  x <- p
-  e <- getPosition -- TODO: End position minus whitespace!
-  return (mkSpan s e, x)
 
 
 unspacedIdent :: GenLanguageDef String ParserState Q -> Parser String

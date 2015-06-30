@@ -31,13 +31,10 @@ decP = embedP <|> inlineP <|> tySynP <|> fnSigP
 
 embedP :: Parser [Dec]
 embedP = do
-  simplified <- getSimplified
-  tc         <- reserved "embed" *> (parens tyConP <|> tyConP)
-  fc         <- reserved "as"    *> fTyConP
-  tc'        <- lift $ fromMaybe (mkName $ tc_id tc) <$> lookupTypeName (tc_id tc)
-  return $ if simplified
-    then []
-    else [annEmbedAs tc' fc]
+  tc  <- reserved "embed" *> (parens tyConP <|> tyConP)
+  fc  <- reserved "as"    *> located fTyConP
+  tc' <- lift $ fromMaybe (mkName $ tc_id tc) <$> lookupTypeName (tc_id tc)
+  ifSimplified [] [annEmbedAs tc' fc]
 
 --------------------------------------------------------------------------------
 -- Inline Annotations ----------------------------------------------------------
@@ -45,12 +42,9 @@ embedP = do
 
 inlineP :: Parser [Dec]
 inlineP = do
-  simplified <- getSimplified
-  var        <- reserved "inline" *> (mkName <$> varidP)
-  sig        <- option [] $ fnSigP' var
-  return $ if simplified
-    then sig
-    else [annIsInline var] ++ sig
+  var <- reserved "inline" *> located (mkName <$> varidP)
+  sig <- option [] $ fnSigP' (val var)
+  ifSimplified sig ([annIsInline var] ++ sig)
 
 --------------------------------------------------------------------------------
 -- Type Synonym Declarations ---------------------------------------------------
@@ -61,10 +55,10 @@ tySynP = named "type synonym" $ do
   simplified <- getSimplified
   con        <- (lift . newName) =<< reserved "type" *> conidP
   tvs        <- map (PlainTV . mkName) <$> many tyVarP
-  evs        <- exprParamsP
+  evs        <- located exprParamsP
   (_, ty)    <- reservedOp "=" *> typeP
   let tySynD = TySynD con tvs ty
-  return $ if null evs || simplified
+  return $ if null (val evs) || simplified
     then [tySynD]
     else [tySynD, annExprParams con evs]
 

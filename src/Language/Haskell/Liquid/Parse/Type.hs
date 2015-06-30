@@ -31,9 +31,9 @@ typeP = parseType =<< lexType
 data Term = OpTerm Name
           | TcTerm Name
           | TvTerm String
-          | ExTerm Span Expr
+          | ExTerm (Located Expr)
           | GrTerm [(SourcePos, Term)]
-          | BdTerm [(SourcePos, Term)] Span String
+          | BdTerm [(SourcePos, Term)] (Located String)
           | ReTerm [(SourcePos, Term)] String Reft
           | FnTerm
 
@@ -44,11 +44,11 @@ lexType = concat <$> many1 (lexType' <|> (return <$> withPos (FnTerm <$ reserved
 lexType' :: Parser [(SourcePos, Term)]
 lexType' = do
   p <- getPosition
-  b <- optionMaybe $ try (withSpan binderP <* colon)
+  b <- optionMaybe $ try (located binderP <* colon)
   t <- many1 termP
   return $ case b of
-    Nothing     -> t
-    Just (s, x) -> [(p, BdTerm t s x)]
+    Nothing -> t
+    Just x  -> [(p, BdTerm t x)]
 
 
 termP :: Parser (SourcePos, Term)
@@ -69,19 +69,19 @@ reTermP = do
   return $ ReTerm t b r
 
 exTermP :: Parser Term
-exTermP = uncurry ExTerm <$> withSpan exprP
+exTermP = ExTerm <$> located exprP
 
 
 tcTermP :: Parser Term
-tcTermP = uncurry go =<< withSpan tyConP
-  where
-    go span (TyCon op id)
-      | op = return $ OpTerm $ mkName id
-      | otherwise = do
-        genExprParam <- isExprParam id
-        return $ if genExprParam
-          then ExTerm span $ eParam id
-          else TcTerm $ mkName id
+tcTermP = do
+  tc <- located tyConP
+  let TyCon op id = val tc
+  if op
+     then return $ OpTerm $ mkName id
+     else do genExprParam <- isExprParam id
+             return $ if genExprParam
+               then ExTerm $ (eParam . tc_id) <$> tc
+               else TcTerm $ mkName id
 
 tvTermP :: Parser Term
 tvTermP = TvTerm <$> tyVarP
@@ -112,7 +112,7 @@ addImplicitTV tv =
 
 
 data Arg = TyArg Type
-         | ExArg Span Expr
+         | ExArg (Located Expr)
          | FnArg
 
 
@@ -141,20 +141,20 @@ ofTerm (p, TvTerm id) = do
   addImplicitTV id
   return (p, TyArg $ VarT $ mkName id)
 
-ofTerm (p, ExTerm span e) =
-  return (p, ExArg span e)
+ofTerm (p, ExTerm e) =
+  return (p, ExArg e)
 
 ofTerm (_, GrTerm [(p, OpTerm name)]) =
   ofTerm (p, TcTerm name)
-ofTerm (_, GrTerm [(p, ExTerm span e)]) =
-  ofTerm (p, ExTerm span e)
+ofTerm (_, GrTerm [(p, ExTerm e)]) =
+  ofTerm (p, ExTerm e)
 ofTerm (_, GrTerm [(p, FnTerm)]) =
   return (p, TyArg ArrowT)
 ofTerm (p, GrTerm terms) =
   ((p, ) . TyArg) <$> parseType' terms
 
-ofTerm (p, BdTerm terms span bndr) =
-  ((p, ) . TyArg) <$> (annotate (bind span bndr) =<< parseType' terms)
+ofTerm (p, BdTerm terms bndr) =
+  ((p, ) . TyArg) <$> (annotate (bind bndr) =<< parseType' terms)
 ofTerm (p, ReTerm terms bndr rft) =
   ((p, ) . TyArg) <$> (annotate (refine bndr rft) =<< parseType' terms)
 
@@ -174,16 +174,16 @@ ofArgs Nothing ((_, TyArg ty) : rest) =
 ofArgs (Just t1) ((_, TyArg t2) : rest) =
   ofArgs (Just (t1 `AppT` t2)) rest
 
-ofArgs Nothing [(p, ExArg _ _)] =
+ofArgs Nothing [(p, ExArg _)] =
   failure p errExprArgAlone
-ofArgs Nothing ((p, ExArg _ _) : _) =
+ofArgs Nothing ((p, ExArg _) : _) =
   failure p errExprArgHead
-ofArgs (Just ty) ((_, ExArg span e) : rest) = do
+ofArgs (Just ty) ((_, ExArg e) : rest) = do
   es <- mapM go rest
-  annotate (exprArgs ((span, e) : es)) ty
+  annotate (exprArgs (e:es)) ty
   where
-    go (_, ExArg span e) = return (span, e)
-    go (p, _           ) = failure p errExprArgTail
+    go (_, ExArg e) = return e
+    go (p, _      ) = failure p errExprArgTail
 
 ofArgs Nothing ((p, FnArg) : _) =
   failure p errTyConOp

@@ -83,11 +83,11 @@ eIteP = eIte <$> (reservedOp "if"   *> predP)
 
 eCtrP :: Parser Expr
 eCtrP = do
-  (s, x) <- (withSpan conidP) <?> "data constructor or expression parameter"
-  genExprParam <- isExprParam x
+  c <- (located conidP) <?> "data constructor or expression parameter"
+  genExprParam <- isExprParam (val c)
   return $ if genExprParam
-    then eParam x
-    else eCtr s x
+    then eParam (val c)
+    else eCtr c
 
 eops = [ [ Prefix (eNeg <$ reservedOp "-")
          ]

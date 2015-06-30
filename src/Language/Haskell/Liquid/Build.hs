@@ -5,20 +5,22 @@
 
 module Language.Haskell.Liquid.Build (
     -- * AST Newtypes
-    Span
-  , Reft
+    Reft
   , Pred
   , Expr
 
-    -- * Type AST Utility Functions
+    -- * Location Information
+  , Located
+  , val
+  , mkLocated
+
+    -- * AST Utility Functions
   , funT
-  , appT
 
     -- * Type-Level Annotations 
   , bind
   , refine
   , exprArgs
-  , mkSpan
 
     -- * Type Declaration Annotations
   , annExprParams
@@ -56,21 +58,16 @@ import Text.Parsec.Pos
 import Language.Haskell.TH.Syntax hiding (Pred)
 import Language.Haskell.TH.Quote
 
-import Language.Haskell.Liquid.RType hiding (Expr, Pred, Span)
+import Language.Haskell.Liquid.RType hiding (Expr, Pred)
 import qualified Language.Haskell.Liquid.RType as RT
 
 --------------------------------------------------------------------------------
--- AST Newtypes ----------------------------------------------------------
+-- AST Newtypes ----------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-newtype Span = S Type
 newtype Reft = R Type
 newtype Pred = P Type
 newtype Expr = E Type
-
-unSpan :: Span -> Type
-unSpan (S s) = s
-{-# INLINE unSpan #-}
 
 unReft :: Reft -> Type
 unReft (R r) = r
@@ -85,14 +82,56 @@ unExpr (E e) = e
 {-# INLINE unExpr #-}
 
 --------------------------------------------------------------------------------
--- Type AST Utility Functions --------------------------------------------------
+-- Location Information --------------------------------------------------------
+--------------------------------------------------------------------------------
+
+val :: Located a -> a
+val = loc_value
+{-# INLINE val #-}
+
+
+mkLocated :: SourcePos -> SourcePos -> a -> Located a
+mkLocated st ed = Located (mkSpan st ed)
+
+mkSpan :: SourcePos -> SourcePos -> Span
+mkSpan st ed = Span (mkPos st) (mkPos ed)
+
+mkPos :: SourcePos -> Pos
+mkPos p = Pos (sourceName p) (sourceLine p) (sourceColumn p)
+
+
+locE :: Located Exp -> Exp
+locE (Located span exp) =
+  ConE 'Located `AppE` spanE span `AppE` exp
+
+locT :: Located Type -> Type
+locT (Located span ty) =
+  PromotedT 'TyLocated `AppT` spanT span `AppT` ty
+
+
+spanE :: Span -> Exp
+spanE (Span st ed) =
+  ConE 'Span `AppE` posE st `AppE` posE ed
+
+spanT :: Span -> Type
+spanT (Span st ed) =
+  PromotedT 'TySpan `AppT` posT st `AppT` posT ed
+
+
+posE :: Pos -> Exp
+posE (Pos name line col) =
+  ConE 'Pos `AppE` strE name `AppE` intE line `AppE` intE col
+
+posT :: Pos -> Type
+posT (Pos name line col) =
+  PromotedT 'TyPos `AppT` strT name `AppT` natT line `AppT` natT col
+
+--------------------------------------------------------------------------------
+-- AST Utility Functions -------------------------------------------------------
 --------------------------------------------------------------------------------
 
 funT :: Type -> Type -> Type
 funT t = (ArrowT `AppT` t `AppT`)
-
-appT :: Type -> [Type] -> Type
-appT t = foldl' AppT t
 
 listT :: [Type] -> Type
 listT = foldr consT PromotedNilT
@@ -103,65 +142,55 @@ tupT (x, y) = PromotedTupleT 2 `AppT` x `AppT` y
 consT :: Type -> Type -> Type
 consT x y = PromotedConsT `AppT` x `AppT` y
 
+strT :: String -> Type
+strT = LitT . StrTyLit
 
-toSymbol :: String -> Type
-toSymbol = LitT . StrTyLit
+natT :: Int -> Type
+natT = LitT . NumTyLit . fromIntegral
 
-toNat :: Int -> Type
-toNat = LitT . NumTyLit . fromIntegral
+
+strE :: String -> Exp
+strE = LitE . StringL
+
+intE :: Int -> Exp
+intE = LitE . IntegerL . fromIntegral
 
 --------------------------------------------------------------------------------
 -- Type-Level Annotations ------------------------------------------------------
 --------------------------------------------------------------------------------
 
-bind :: Span -> String -> Type -> Type
-bind span x a = ConT ''Bind `AppT` unSpan span `AppT` toSymbol x `AppT` a
+bind :: Located String -> Type -> Type
+bind x a = ConT ''Bind `AppT` locT (strT <$> x) `AppT` a
 
 refine :: String -> Reft -> Type -> Type
-refine b r a = ConT ''Refine `AppT` a `AppT` toSymbol b `AppT` unReft r
+refine b r a = ConT ''Refine `AppT` a `AppT` strT b `AppT` unReft r
 
-
-exprArgs :: [(Span, Expr)] -> Type -> Type
-exprArgs es a = ConT ''ExprArgs `AppT` a `AppT` listT (map (tupT . (unSpan *** unExpr)) es)
-
-
-mkSpan :: SourcePos -> SourcePos -> Span
-mkSpan start end = S $ PromotedT 'RT.Span
-  `AppT` filename
-  `AppT` startLine
-  `AppT` startCol
-  `AppT` endLine
-  `AppT` endCol
-  where
-    filename  = toSymbol $ sourceName   start
-    startLine = toNat    $ sourceLine   start
-    startCol  = toNat    $ sourceColumn start
-    endLine   = toNat    $ sourceLine   end
-    endCol    = toNat    $ sourceColumn end
+exprArgs :: [Located Expr] -> Type -> Type
+exprArgs es a = ConT ''ExprArgs `AppT` a `AppT` listT (map (locT . fmap unExpr) es)
 
 --------------------------------------------------------------------------------
 -- Type Declaration Annotations ------------------------------------------------
 --------------------------------------------------------------------------------
 
-annExprParams :: Name -> [String] -> Dec
-annExprParams con evs =
-  PragmaD $ AnnP (TypeAnnotation con) (SigE expr (ConT ''ExprParams))
-  where
-    expr = ConE 'ExprParams `AppE` ListE (map (LitE . StringL) evs)
+annExprParams :: Name -> Located [String] -> Dec
+annExprParams tc =
+  PragmaD . AnnP (TypeAnnotation tc) .
+    (ConE 'ExprParams `AppE`) . locE . fmap (ListE . map strE)
 
-annEmbedAs :: Name -> FTycon -> Dec
-annEmbedAs tc fc =
-  PragmaD $ AnnP (TypeAnnotation tc) (SigE expr (ConT ''EmbedAs))
+annEmbedAs :: Name -> Located FTycon -> Dec
+annEmbedAs tc =
+  PragmaD . AnnP (TypeAnnotation tc) .
+    (ConE 'EmbedAs `AppE`) . locE . fmap ofFTycon
   where
-    expr                 = ConE 'EmbedAs `AppE` ofFTycon fc
     ofFTycon FTcInt      = ConE 'FTcInt
     ofFTycon FTcReal     = ConE 'FTcReal
     ofFTycon FTcBool     = ConE 'FTcBool
     ofFTycon (FTcUser s) = ConE 'FTcUser `AppE` LitE (StringL s)
 
-annIsInline :: Name -> Dec
+annIsInline :: Located Name -> Dec
 annIsInline var =
-  PragmaD $ AnnP (ValueAnnotation var) (SigE (ConE 'IsInline) (ConT ''IsInline))
+  PragmaD $ AnnP (ValueAnnotation $ val var) $
+    ConE 'IsInline `AppE` spanE (loc_span var)
 
 --------------------------------------------------------------------------------
 -- Reft ------------------------------------------------------------------------
@@ -212,13 +241,13 @@ eConNat :: Integer -> Expr
 eConNat = E . (PromotedT 'ECon `AppT`) . cNat
 
 eVar :: String -> Expr
-eVar = E . (PromotedT 'EVar `AppT`) . toSymbol
+eVar = E . (PromotedT 'EVar `AppT`) . strT
 
 eParam :: String -> Expr
-eParam = E . (PromotedT 'EParam `AppT`) . toSymbol
+eParam = E . (PromotedT 'EParam `AppT`) . strT
 
-eCtr :: Span -> String -> Expr
-eCtr span = E . (PromotedT 'ECtr `AppT` unSpan span `AppT`) . ConT . mkName
+eCtr :: Located String -> Expr
+eCtr = E . (PromotedT 'ECtr `AppT`) . locT . fmap (ConT . mkName)
 
 eNeg :: Expr -> Expr
 eNeg (E e) = E $ PromotedT 'ENeg `AppT` e

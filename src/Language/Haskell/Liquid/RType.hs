@@ -1,15 +1,25 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE Rank2Types #-}
 
+-- TODO: Rename this module
+
 module Language.Haskell.Liquid.RType (
+    -- * Location Information
+    Located(..)
+  , Span(..)
+  , Pos(..)
+
     -- * Embedded Type Annotations
-    Bind
+  , TyLocated(..)
+  , TySpan(..)
+  , TyPos(..)
+  , Bind
   , Refine
   , ExprArgs
-  , Span(..)
 
     -- * Embedded Refinement AST
   , Pred(..)
@@ -21,29 +31,55 @@ module Language.Haskell.Liquid.RType (
     -- * Type Declaration Annotations
   , ExprParams(..)
   , EmbedAs(..)
-  , FTycon(..)
   , IsInline(..)
-  ) where
 
--- TODO: Rename this module
+    -- * Components
+  , FTycon(..)
+  ) where
 
 import Data.Data
 import Data.Typeable
 
 import GHC.TypeLits
 
-import Language.Haskell.TH.Syntax (Name)
+--------------------------------------------------------------------------------
+-- Location Information --------------------------------------------------------
+--------------------------------------------------------------------------------
+
+data Located a = Located
+  { loc_span  :: Span
+  , loc_value :: a
+  }
+  deriving (Functor, Data, Typeable)
+
+data Span = Span
+  { span_start :: Pos
+  , span_end   :: Pos
+  }
+  deriving (Data, Typeable)
+
+data Pos = Pos
+  { pos_name  :: String
+  , pos_line  :: Int
+  , pos_col   :: Int
+  }
+  deriving (Data, Typeable)
 
 --------------------------------------------------------------------------------
 -- Embedded Type Annotations ---------------------------------------------------
 --------------------------------------------------------------------------------
 
-type Bind (s :: Span) (b :: Symbol) a = a
+data TyLocated a = TyLocated TySpan a
+
+data TySpan = TySpan TyPos TyPos
+
+data TyPos = TyPos Symbol Nat Nat
+
+
+type Bind (b :: TyLocated Symbol) a = a
 type Refine a (b :: Symbol) (p :: Pred) = a
 
-type ExprArgs a (es :: [(Span, Expr)]) = a
-
-data Span = Span Symbol Nat Nat Nat Nat
+type ExprArgs a (es :: [TyLocated Expr]) = a
 
 --------------------------------------------------------------------------------
 -- Embedded Refinement AST -----------------------------------------------------
@@ -65,7 +101,7 @@ data Expr :: * where
   ECon   :: Constant -> Expr
   EVar   :: Symbol -> Expr
   EParam :: Symbol -> Expr
-  ECtr   :: forall a. Span -> a -> Expr
+  ECtr   :: forall a. TyLocated a -> Expr
   ENeg   :: Expr -> Expr
   EBin   :: Bop  -> Expr -> Expr -> Expr
   EIte   :: Pred -> Expr -> Expr -> Expr
@@ -82,11 +118,15 @@ data Bop  = Plus | Minus | Times | Div | Mod
 -- Type Declaration Annotations ------------------------------------------------
 --------------------------------------------------------------------------------
 
-data ExprParams = ExprParams [String] deriving (Data, Typeable)
+data ExprParams = ExprParams (Located [String]) deriving (Data, Typeable)
 
-data EmbedAs = EmbedAs FTycon deriving (Data, Typeable)
+data EmbedAs = EmbedAs (Located FTycon) deriving (Data, Typeable)
+
+data IsInline = IsInline Span deriving (Data, Typeable)
+
+--------------------------------------------------------------------------------
+-- Components ------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 data FTycon = FTcInt | FTcReal | FTcBool | FTcUser String deriving (Data, Typeable)
-
-data IsInline = IsInline deriving (Data, Typeable)
 
