@@ -28,10 +28,10 @@ predP :: Parser Pred
 predP = buildExpressionParser pops ptermP <?> "predicate"
 
 ptermP :: Parser Pred
-ptermP = parens predP
-    <|> (pTrue  <$ reserved "true")
-    <|> (pFalse <$ reserved "false")
-    <|> expOrAtomP
+ptermP = expOrAtomP
+     <|> parens predP
+     <|> (pTrue  <$ reserved "true")
+     <|> (pFalse <$ reserved "false")
 
 expOrAtomP :: Parser Pred
 expOrAtomP = do
