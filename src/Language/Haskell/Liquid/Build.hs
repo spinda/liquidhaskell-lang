@@ -43,6 +43,7 @@ module Language.Haskell.Liquid.Build (
   , eVar
   , eParam
   , eCtr
+  , eApp
   , eNeg
   , eBin
   , eIte
@@ -248,6 +249,9 @@ eParam = E . (PromotedT 'EParam `AppT`) . strT
 
 eCtr :: Located String -> Expr
 eCtr = E . (PromotedT 'ECtr `AppT`) . locT . fmap (ConT . mkName)
+
+eApp :: Located Expr -> [Expr] -> Expr
+eApp e = E . (PromotedT 'EApp `AppT` locT (unExpr <$> e) `AppT`) . listT . map unExpr
 
 eNeg :: Expr -> Expr
 eNeg (E e) = E $ PromotedT 'ENeg `AppT` e

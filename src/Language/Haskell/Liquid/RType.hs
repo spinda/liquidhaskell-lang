@@ -102,6 +102,7 @@ data Expr :: * where
   EVar   :: Symbol -> Expr
   EParam :: Symbol -> Expr
   ECtr   :: forall a. TyLocated a -> Expr
+  EApp   :: TyLocated Expr -> [Expr] -> Expr
   ENeg   :: Expr -> Expr
   EBin   :: Bop  -> Expr -> Expr -> Expr
   EIte   :: Pred -> Expr -> Expr -> Expr

@@ -69,17 +69,19 @@ exprP :: Parser Expr
 exprP = buildExpressionParser eops etermP <?> "expression"
 
 etermP :: Parser Expr
-etermP = parens exprP
-    <|> (eBot <$ reservedOp "_|_")
-    <|> eIteP
-    <|> (eConNat <$> natural)
-    <|> (eVar <$> binderP)
-    <|> eCtrP
+etermP = do
+  es <- many1 (located etermP')
+  return $ case es of
+    [e]     -> val e
+    (e:es') -> eApp e (val <$> es')
 
-eIteP :: Parser Expr
-eIteP = eIte <$> (reservedOp "if"   *> predP)
-             <*> (reservedOp "then" *> exprP)
-             <*> (reservedOp "else" *> exprP)
+etermP' :: Parser Expr
+etermP' = parens exprP
+      <|> (eBot <$ reservedOp "_|_")
+      <|> eIteP
+      <|> (eConNat <$> natural)
+      <|> (eVar <$> binderP)
+      <|> eCtrP
 
 eCtrP :: Parser Expr
 eCtrP = do
@@ -88,6 +90,11 @@ eCtrP = do
   return $ if genExprParam
     then eParam (val c)
     else eCtr c
+
+eIteP :: Parser Expr
+eIteP = eIte <$> (reservedOp "if"   *> predP)
+             <*> (reservedOp "then" *> exprP)
+             <*> (reservedOp "else" *> exprP)
 
 eops = [ [ Prefix (eNeg <$ reservedOp "-")
          ]
